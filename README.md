@@ -2,13 +2,33 @@
   <img src="https://raw.githubusercontent.com/Jackhammer9/Reduino/refs/heads/main/.github/workflows/Reduino.png" alt="Reduino project illustration" width="320" />
 </p>
 
-# Reduino
+<div align = "center">
 
-Write expressive Python that turns into Arduino-flavoured C++ and optional PlatformIO
-projects. Reduino lets you describe LED-centric sketches with familiar control flow,
-transpiles the script into Arduino code, and (optionally) compiles/uploads it for you.
 
----
+<img src="https://img.shields.io/badge/License-GPLv3-blueviolet">
+
+</div> <br>
+
+<div align = "center">
+    
+
+![GitHub forks](https://img.shields.io/github/forks/Jackhammer9/Reduino?color=red&logo=Github&style=flat-square) ![GitHub watchers](https://img.shields.io/github/watchers/Jackhammer9/Reduino?logo=Github) ![GitHub Repo stars](https://img.shields.io/github/stars/Jackhammer9/Reduino?logo=Github) ![GitHub followers](https://img.shields.io/github/followers/Jackhammer9?logo=Github) 
+
+    
+</div>
+
+<div align = "center">
+    
+![GitHub closed pull requests](https://img.shields.io/github/issues-pr-closed/Jackhammer9/Reduino?logo=Github)  ![GitHub closed issues](https://img.shields.io/github/issues-closed/Jackhammer9/Reduino?color=255%2C255%2C0&logo=Github)![GitHub repo size](https://img.shields.io/github/repo-size/Jackhammer9/Reduino?logo=Github)![GitHub release (latest by date)](https://img.shields.io/github/v/release/Jackhammer9/Reduino?display_name=tag&logo=Github)
+    
+</div>
+
+<div align = "center">
+    
+![PyPI - Downloads](https://img.shields.io/pypi/dm/Reduino?label=Pypi%20Downloads&logo=Pypi) ![PyPI](https://img.shields.io/pypi/v/Reduino?logo=pypi)
+    
+</div>
+
 
 ## Table of contents
 
