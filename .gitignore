@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+*.egg
+*.log
+
+# Virtual environment
+venv/
+.env/
+.env.bak/
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# PlatformIO / Arduino / Toolchain artifacts
+.pio/
+pioenvs/
+.toolchain/
+**/toolchain/__pycache__/
+**/toolchain/build/
+**/toolchain/.pio/
+**/toolchain/.pioenvs/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary
+*.tmp
+*.swp
+*.bak
+*.orig
+
+# Test / coverage
+.coverage
+htmlcov/
+.cache/
+pytest_cache/
