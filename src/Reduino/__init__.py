@@ -3,7 +3,7 @@ from __future__ import annotations
 """User-facing helpers for the Reduino transpiler package."""
 
 __all__ = ["target"]
-__version__ = "0.1.0"
+__version__ = "0.0.2"
 
 import pathlib
 import sys
@@ -34,9 +34,9 @@ def target(port: str, *, upload: bool = True) -> None:
     src = main_file.read_text(encoding="utf-8")
     cpp = emit(parse(src))
 
-    print(f"{cpp}\n")
-
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="reduino-pio-"))
     write_project(tmp, cpp, port=port)
     if upload:
         compile_upload(tmp)
+
+    return cpp

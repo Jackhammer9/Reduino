@@ -1,23 +1,24 @@
 [build-system]
-requires = ["setuptools>=69", "wheel", "build"]
+requires = ["setuptools >= 77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "Reduino"
-version = "0.1.0"
-description = "Pythonic Arduino transpiler: write Python, get Arduino C++ and flash."
+version = "0.0.2"
+description = "Reduino transpiles Python scripts into efficient Arduino C++ and uploads automatically. A simple, intuitive way to control sensors, LEDs, and actuators without touching C++."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
-authors = [{ name = "Arnav Bajaj" }]
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Arnav Bajaj" , email= "arnavbajaj9@gmail.com"}]
 keywords = ["arduino", "embedded", "transpiler", "robotics", "avr", "cpp"]
 classifiers = [
-  "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3 :: Only",
-  "License :: OSI Approved :: MIT License",
-  "Operating System :: OS Independent",
-  "Topic :: Software Development :: Code Generators",
-  "Topic :: System :: Hardware :: Universal Serial Bus (USB)"
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Embedded Systems",
 ]
 
 dependencies = [
@@ -39,3 +40,7 @@ include = ["Reduino*"]
 
 [tool.ruff]
 line-length = 100
+
+[project.urls]
+Homepage = "https://github.com/Jackhammer9/Reduino"
+Issues = "https://github.com/Jackhammer9/Reduino/issues"
