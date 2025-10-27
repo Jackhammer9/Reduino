@@ -705,7 +705,7 @@ RE_IMPORT_TARGET  = re.compile(r"^\s*from\s+Reduino\s+import\s+target\s*$")
 
 # Led Primitives
 RE_ASSIGN     = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*(.+)$")
-RE_LED_DECL   = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Led\s*\(\s*(.+?)\s*\)\s*$")
+RE_LED_DECL   = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Led\s*\(\s*(.*?)\s*\)\s*$")
 RE_LED_ON         = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.on\(\s*\)\s*$")
 RE_LED_OFF        = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.off\(\s*\)\s*$")
 RE_LED_TOGGLE     = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.toggle\(\s*\)\s*$")
@@ -1809,6 +1809,10 @@ def _parse_simple_lines(
         m = RE_LED_DECL.match(line)
         if m:
             name, expr = m.group(1), m.group(2)
+            if not expr.strip():
+                body.append(LedDecl(name=name, pin=13))
+                i += 1
+                continue
             try:
                 expr_ast = ast.parse(expr, mode="eval").body
             except Exception:
