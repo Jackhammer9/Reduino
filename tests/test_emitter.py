@@ -212,8 +212,7 @@ def test_emit_list_support(norm):
 
     cpp = norm(emit(parse(dedent(src))))
 
-    assert "#include <initializer_list>" in cpp
-    assert "__redu_make_list<int>({1, 2, 3})" in cpp
+    assert "__redu_make_list<int>(1, 2, 3)" in cpp
     assert "__redu_list_append(values, 4);" in cpp
     assert "__redu_list_remove(values, 2);" in cpp
     assert "__redu_list_get(values, 0)" in cpp

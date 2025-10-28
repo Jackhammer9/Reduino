@@ -278,7 +278,7 @@ def test_parser_list_features(src):
     globals_out = {decl.name: decl for decl in prog.global_decls}
     assert "values" in globals_out
     assert globals_out["values"].c_type == "__redu_list<int>"
-    assert "__redu_make_list<int>({1, 2, 3})" in globals_out["values"].expr
+    assert "__redu_make_list<int>(1, 2, 3)" in globals_out["values"].expr
 
     append_calls = [
         node.expr

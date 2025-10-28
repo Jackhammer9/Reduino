@@ -54,9 +54,7 @@ auto __redu_len(const T &value) -> decltype(value.length()) {
 }
 """
 
-LIST_HELPER_SNIPPET = """#include <initializer_list>
-
-template <typename T>
+LIST_HELPER_SNIPPET = """template <typename T>
 struct __redu_list {
   T *data;
   size_t size;
@@ -64,14 +62,15 @@ struct __redu_list {
 };
 
 template <typename T>
-__redu_list<T> __redu_make_list(std::initializer_list<T> init) {
+__redu_list<T> __redu_make_list() {
+  return {};
+}
+
+template <typename T, typename First, typename... Rest>
+__redu_list<T> __redu_make_list(First first, Rest... rest) {
   __redu_list<T> result;
-  result.size = init.size();
-  result.data = result.size ? new T[result.size] : nullptr;
-  size_t idx = 0;
-  for (const auto &value : init) {
-    result.data[idx++] = value;
-  }
+  result.size = sizeof...(Rest) + 1;
+  result.data = new T[result.size]{static_cast<T>(first), static_cast<T>(rest)...};
   return result;
 }
 

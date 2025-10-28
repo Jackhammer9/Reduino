@@ -382,8 +382,10 @@ def _to_c_expr(
                 )
             )
             elem_cpp = _cpp_type(elem_label)
+            if not items:
+                return f"__redu_make_list<{elem_cpp}>()"
             joined = ", ".join(items)
-            return f"__redu_make_list<{elem_cpp}>({{{joined}}})"
+            return f"__redu_make_list<{elem_cpp}>({joined})"
 
         if isinstance(n, ast.ListComp):
             if ctx is None:
