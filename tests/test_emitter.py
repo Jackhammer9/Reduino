@@ -125,6 +125,22 @@ def test_led_pinmode_follows_conditional_assignment(norm):
     assert "c = 9;" in setup_section
 
 
+def test_emit_serial_monitor(norm):
+    src = """
+    from Reduino.Utils import SerialMonitor
+
+    monitor = SerialMonitor(115200)
+    monitor.write("hi")
+    """
+
+    cpp = emit(parse(src))
+    text = norm(cpp)
+
+    assert "Serial.begin(115200);" in cpp
+    assert 'Serial.println("hi");' in cpp
+    # ensure helper lands in setup body
+    setup_section = text.split("void loop()", 1)[0]
+    assert "Serial.begin(115200);" in setup_section
 def test_emit_includes_len_helper_and_call(norm):
     src = """
     total = len(readings)

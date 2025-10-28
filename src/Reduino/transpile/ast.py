@@ -55,6 +55,23 @@ class Sleep:
 
 
 @dataclass
+class SerialMonitorDecl:
+    """Declare a serial monitor configuration with a baud rate."""
+
+    name: str
+    baud: Union[int, str] = 9600
+
+
+@dataclass
+class SerialWrite:
+    """Emit data to the serial monitor."""
+
+    name: str
+    value: str
+    newline: bool = True
+
+
+@dataclass
 class VarDecl:
     """Declare a variable with an optional initializer."""
 

@@ -16,6 +16,8 @@ from .ast import (
     LedToggle,
     Program,
     ReturnStmt,
+    SerialMonitorDecl,
+    SerialWrite,
     Sleep,
     TryStatement,
     VarAssign,
@@ -316,6 +318,15 @@ def _emit_block(
                     )
                 )
                 lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, SerialMonitorDecl):
+            lines.append(f"{indent}Serial.begin({_emit_expr(node.baud)});")
+            continue
+
+        if isinstance(node, SerialWrite):
+            method = "println" if getattr(node, "newline", True) else "print"
+            lines.append(f"{indent}Serial.{method}({node.value});")
             continue
 
         if isinstance(node, VarDecl):

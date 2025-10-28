@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import operator as op
 import re
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from .ast import (
     BreakStmt,
@@ -21,6 +21,8 @@ from .ast import (
     LedToggle,
     Program,
     ReturnStmt,
+    SerialMonitorDecl,
+    SerialWrite,
     Sleep,
     TryStatement,
     VarAssign,
@@ -994,6 +996,7 @@ def _merge_return_types(types: List[str], has_void: bool) -> str:
 # Imports to ignore
 RE_IMPORT_LED     = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+Led\s*$")
 RE_IMPORT_SLEEP   = re.compile(r"^\s*from\s+Reduino\.Time\s+import\s+Sleep\s*$")
+RE_IMPORT_SERIAL  = re.compile(r"^\s*from\s+Reduino\.Utils\s+import\s+SerialMonitor\s*$")
 RE_IMPORT_TARGET  = re.compile(r"^\s*from\s+Reduino\s+import\s+target\s*$")
 
 # Led Primitives
@@ -1002,6 +1005,10 @@ RE_LED_DECL   = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Led\s*\(\s*(.*?)\s*\)\s*$"
 RE_LED_ON         = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.on\(\s*\)\s*$")
 RE_LED_OFF        = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.off\(\s*\)\s*$")
 RE_LED_TOGGLE     = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.toggle\(\s*\)\s*$")
+
+# Serial primitives
+RE_SERIAL_DECL    = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*SerialMonitor\s*\(\s*(.*?)\s*\)\s*$")
+RE_SERIAL_WRITE   = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.write\(\s*(.*?)\s*\)\s*$")
 
 #Time Primitives
 RE_SLEEP_EXPR = re.compile(r"^\s*Sleep\s*\(\s*(.+?)\s*\)\s*$")
@@ -1296,10 +1303,17 @@ def _handle_assignment_ast(
     def is_led_call(n: ast.AST) -> bool:
         return isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "Led"
 
-    if isinstance(target, ast.Name) and is_led_call(value):
+    def is_serial_monitor_call(n: ast.AST) -> bool:
+        return (
+            isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Name)
+            and n.func.id == "SerialMonitor"
+        )
+
+    if isinstance(target, ast.Name) and (is_led_call(value) or is_serial_monitor_call(value)):
         return None
     if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
-        if any(is_led_call(elt) for elt in value.elts):
+        if any(is_led_call(elt) or is_serial_monitor_call(elt) for elt in value.elts):
             return None
 
     vars_env = ctx.setdefault("vars", {})
@@ -1727,8 +1741,12 @@ def _parse_simple_lines(
             continue
 
         # ignore imports
-        if (RE_IMPORT_LED.match(line) or RE_IMPORT_SLEEP.match(line) or
-            RE_IMPORT_TARGET.match(line)):
+        if (
+            RE_IMPORT_LED.match(line)
+            or RE_IMPORT_SLEEP.match(line)
+            or RE_IMPORT_SERIAL.match(line)
+            or RE_IMPORT_TARGET.match(line)
+        ):
             i += 1
             continue
 
@@ -2192,6 +2210,31 @@ def _parse_simple_lines(
             i += 1
             continue
 
+        m = RE_SERIAL_DECL.match(line)
+        if m:
+            name, expr = m.group(1), m.group(2)
+            baud_arg = _extract_call_argument(expr, keyword="baud_rate")
+            if baud_arg is None:
+                baud_arg = _extract_call_argument(expr)
+            baud_value: Union[int, str] = 9600
+            if baud_arg is not None and baud_arg.strip():
+                try:
+                    expr_ast = ast.parse(baud_arg, mode="eval").body
+                except Exception:
+                    expr_ast = None
+                if expr_ast is not None and not _expr_has_name(expr_ast):
+                    try:
+                        baud_value = int(_eval_const(baud_arg, vars))
+                    except Exception:
+                        baud_value = _to_c_expr(baud_arg, vars, ctx)
+                else:
+                    baud_value = _to_c_expr(baud_arg, vars, ctx)
+            body.append(SerialMonitorDecl(name=name, baud=baud_value))
+            ctx.setdefault("serial_monitors", set()).add(name)
+            vars[name] = _ExprStr(name)
+            i += 1
+            continue
+
         # Actions
         m = RE_LED_ON.match(line)
         if m:
@@ -2208,6 +2251,19 @@ def _parse_simple_lines(
         m = RE_LED_TOGGLE.match(line)
         if m:
             body.append(LedToggle(name=m.group(1)))
+            i += 1
+            continue
+
+        m = RE_SERIAL_WRITE.match(line)
+        if m:
+            owner, arg_src = m.group(1), m.group(2)
+            arg_src = arg_src.strip()
+            value_expr = ""
+            if arg_src:
+                value_expr = _to_c_expr(arg_src, vars, ctx)
+            else:
+                value_expr = '""'
+            body.append(SerialWrite(name=owner, value=value_expr, newline=True))
             i += 1
             continue
 
@@ -2334,8 +2390,12 @@ def parse(src: str) -> Program:
             i += 1; continue
 
         # ignore imports
-        if (RE_IMPORT_LED.match(text) or RE_IMPORT_SLEEP.match(text) or
-            RE_IMPORT_TARGET.match(text)):
+        if (
+            RE_IMPORT_LED.match(text)
+            or RE_IMPORT_SLEEP.match(text)
+            or RE_IMPORT_SERIAL.match(text)
+            or RE_IMPORT_TARGET.match(text)
+        ):
             i += 1; continue
 
         # controls
