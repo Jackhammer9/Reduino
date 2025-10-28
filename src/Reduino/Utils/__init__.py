@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from collections import deque
-from typing import Deque, Optional
+from typing import Optional
+
+try:
+    import serial  # type: ignore[import]
+except ModuleNotFoundError:  # pragma: no cover - exercised in real environments
+    serial = None  # type: ignore[assignment]
 
 
 class SerialMonitor:
@@ -14,17 +18,21 @@ class SerialMonitor:
         baud_rate: int = 9600,
         *,
         port: Optional[str] = None,
+        timeout: float = 1.0,
         newline: str = "\n",
     ) -> None:
-        """Initialise a virtual serial monitor configuration.
+        """Initialise a serial monitor configuration bound to an MCU port.
 
         Parameters
         ----------
         baud_rate:
-            Baud rate that will be passed to ``Serial.begin`` when transpiled.
+            Baud rate that will be passed to ``Serial.begin`` when transpiled
+            and used when establishing a host serial connection.
         port:
             Optional identifier of the serial port used on the host machine.
-            The value is stored for diagnostic purposes only.
+            If supplied the monitor immediately connects to it.
+        timeout:
+            Read timeout (in seconds) applied to the host serial connection.
         newline:
             Delimiter appended to messages written via :meth:`write`. The
             default mirrors :func:`Serial.println` on Arduino boards.
@@ -35,28 +43,56 @@ class SerialMonitor:
 
         self.baud_rate = int(baud_rate)
         self.port = port
+        self.timeout = timeout
         self.newline = newline
-        self._buffer: Deque[str] = deque()
+        self._serial: Optional["serial.Serial"] = None
+
+        if port is not None:
+            self.connect(port)
+
+    def connect(self, port: str) -> None:
+        """Open a serial connection to ``port`` using the configured baud rate."""
+
+        if serial is None:
+            raise RuntimeError(
+                "pyserial is required for host-side SerialMonitor reads; install the "
+                "'pyserial' package to enable this functionality."
+            )
+
+        if self._serial is not None and self._serial.is_open:  # pragma: no cover - safety net
+            self._serial.close()
+
+        self.port = port
+        self._serial = serial.Serial(port=port, baudrate=self.baud_rate, timeout=self.timeout)
+
+    def close(self) -> None:
+        """Terminate the current serial connection if one exists."""
+
+        if self._serial is not None and self._serial.is_open:
+            self._serial.close()
+
+        self._serial = None
 
     def write(self, value: object) -> str:
-        """Queue ``value`` for emission to the serial monitor.
-
-        The transpiler maps calls to this method to ``Serial.println`` in the
-        generated sketch. During host-side execution the helper stores the
-        string representation of ``value`` so that :meth:`read` can surface the
-        output for inspection.
-        """
+        """Send ``value`` to the connected MCU via the serial monitor."""
 
         text = f"{value}"
-        self._buffer.append(text)
+        if self._serial is not None and self._serial.is_open:
+            payload = (text + self.newline).encode("utf-8")
+            self._serial.write(payload)
         return text
 
     def read(self) -> str:
-        """Return the next buffered message and echo it to stdout."""
+        """Read the next message from the MCU and echo it to stdout."""
 
-        if not self._buffer:
+        if self._serial is None:
+            raise RuntimeError("No serial port configured. Call connect() with a valid port first.")
+
+        raw = self._serial.readline()
+        if not raw:
             return ""
 
-        message = self._buffer.popleft()
-        print(message + self.newline, end="")
+        message = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+        if message:
+            print(message + self.newline, end="")
         return message
