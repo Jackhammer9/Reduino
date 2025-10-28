@@ -2,7 +2,7 @@
   <img src="https://raw.githubusercontent.com/Jackhammer9/Reduino/refs/heads/main/.github/workflows/Reduino.png" alt="Reduino" width="360" />
 
   <h1>Reduino</h1>
-  <p><em>Write friendly Python. Get Arduino-ready C++. Upload Easily.</em></p>
+  <p><em>Write friendly Python. Get Arduino-ready C++. Upload Easily to MCUs.</em></p>
 
   <!-- Badges -->
 
@@ -112,14 +112,13 @@ led.blink(250, times=3)
 | Member                         | Description                                                |
 | ------------------------------ | ---------------------------------------------------------- |
 | `Sleep(ms, sleep_func=None)`   | Delay helper; custom `sleep_func` is injectable for tests. |
-| `.seconds`                     | Duration exposed in seconds.                               |
-| `.wait()` or call the instance | Perform the delay.                                         |
+| `.seconds`                     | Duration exposed in seconds.                               |             
 
 **Example**
 
 ```python
 from Reduino.Time import Sleep
-Sleep(500).wait()  # or Sleep(500)()
+Sleep(500)
 ```
 
 ### `Reduino.target`
