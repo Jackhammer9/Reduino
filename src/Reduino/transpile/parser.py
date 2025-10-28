@@ -2478,6 +2478,13 @@ def _parse_simple_lines(
         except SyntaxError:
             expr_node = None
         if expr_node is not None:
+            if (
+                isinstance(expr_node, ast.Call)
+                and isinstance(expr_node.func, ast.Name)
+                and expr_node.func.id == "print"
+            ):
+                i += 1
+                continue
             try:
                 expr_c = _to_c_expr(line, vars, ctx)
             except Exception:

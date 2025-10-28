@@ -139,6 +139,25 @@ def test_parser_handles_target_call_inside_expression(src):
     assert all("target" not in expr for expr in exprs)
 
 
+def test_parser_skips_print_statements(src):
+    code = src("""
+        from Reduino import target
+
+        r = target("COM3")
+        print(r)
+        print("hello")
+    """)
+
+    prog = parse(code)
+
+    exprs = [
+        node.expr
+        for node in prog.setup_body
+        if isinstance(node, ExprStmt)
+    ]
+    assert not exprs
+
+
 def test_parser_resolves_string_concat_to_int(src):
     code = src("""
         from Reduino.Actuators import Led
