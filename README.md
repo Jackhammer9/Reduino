@@ -32,6 +32,7 @@
 
 ## Table of contents
 
+- [API reference](#api-reference)
 - [Quick start](#quick-start)
 - [How Reduino works](#how-reduino-works)
 - [Supported devices & primitives](#supported-devices--primitives)
@@ -39,6 +40,87 @@
 - [Testing](#testing)
 - [Contributing](#contributing)
 - [License](#license)
+
+## API reference
+
+Reduino ships with a compact standard library that mirrors what the transpiled
+Arduino sketch will do. The tables below document every user-facing class and
+helper, including concrete snippets you can paste into your own automation
+scripts.
+
+### `Reduino.Actuators.Led`
+
+| Member | Description | Usage example |
+| ------ | ----------- | ------------- |
+| `Led(pin=13)` | Instantiate a virtual LED bound to the given Arduino pin. | ```python
+from Reduino.Actuators import Led
+led = Led(5)
+print(led.pin)
+``` |
+| `on()` | Switch the LED to its maximum brightness (`255`). | ```python
+led.on()
+assert led.get_state() is True
+``` |
+| `off()` | Turn the LED off (`brightness = 0`). | ```python
+led.off()
+assert led.get_state() is False
+``` |
+| `get_state()` | Return `True` when the LED is currently on. | ```python
+if not led.get_state():
+    led.on()
+``` |
+| `get_brightness()` | Report the PWM brightness (0-255). | ```python
+level = led.get_brightness()
+print(f"Current level: {level}")
+``` |
+| `set_brightness(value)` | Set a specific brightness; values outside 0-255 raise `ValueError`. | ```python
+led.set_brightness(128)
+``` |
+| `toggle()` | Flip between `on()` and `off()`. | ```python
+for _ in range(4):
+    led.toggle()
+``` |
+| `blink(duration_ms, times=1)` | Alternate between on/off with waits handled for you. | ```python
+led.blink(duration_ms=250, times=3)
+``` |
+| `fade_in(step=5, delay_ms=10)` | Gradually ramp up brightness. | ```python
+led.fade_in(step=10, delay_ms=20)
+``` |
+| `fade_out(step=5, delay_ms=10)` | Gradually ramp down brightness. | ```python
+led.fade_out(step=15, delay_ms=30)
+``` |
+| `flash_pattern(pattern, delay_ms=200)` | Walk through a list/tuple of `0`, `1`, or 0-255 values. | ```python
+led.flash_pattern([1, 0, 64, 128], delay_ms=150)
+``` |
+
+### `Reduino.Time.Sleep`
+
+| Member | Description | Usage example |
+| ------ | ----------- | ------------- |
+| `Sleep(duration_ms, sleep_func=None)` | Create a delay helper; inject `sleep_func` for custom timing in tests. | ```python
+from Reduino.Time import Sleep
+wait_half_second = Sleep(500)
+``` |
+| `seconds` | Property exposing the duration in seconds. | ```python
+print(wait_half_second.seconds)  # 0.5
+``` |
+| `wait()` | Block on the configured delay. | ```python
+wait_half_second.wait()
+``` |
+| `__call__()` | Calling the instance is equivalent to `wait()`. | ```python
+wait_half_second()
+``` |
+
+### `Reduino.target`
+
+| Member | Description | Usage example |
+| ------ | ----------- | ------------- |
+| `target(port, upload=True)` | Transpile the current script, emit Arduino-ready C++, and optionally upload it via PlatformIO. Returns the generated C++ string. | ```python
+from Reduino import target
+
+generated_cpp = target("/dev/ttyACM0", upload=False)
+print(generated_cpp)
+``` |
 
 ## Quick start
 
@@ -98,27 +180,46 @@ board.
 ## Supported Python features
 
 Reduino focuses on a lightweight DSL that feels like idiomatic Python while staying safe for
-static analysis.
+static analysis. Every construct below is supported by the transpiler today.
 
 ### Control flow
 
 - `while True:` blocks become the Arduino `loop()` body.
-- `for i in range(N):` loops at top-level unroll into repeated setup statements.
-- `if` / `elif` / `else` constructs are preserved with their conditions.
+- `for` loops over `range(...)`, lists, tuples, or generator expressions execute with faithful
+  semantics (top-level loops are unrolled into setup statements when possible).
+- `if` / `elif` / `else`, nested conditionals, and ternary expressions are preserved.
+- `break` and `continue` map to their C++ equivalents inside loops.
 
 ### Variables & assignments
 
-- Regular assignments, tuple unpacking, and reassignments in setup scope create matching C++
-  declarations.
+- Regular assignments, tuple unpacking, and the pythonic swap `a, b = b, a` emit matching C++.
+- Augmented assignments (`+=`, `-=`, `*=`, etc.) fold into the generated code where valid.
 - Branch-local assignments are promoted to globals so both sides of an `if` can mutate them
   safely.
+- `global` statements for top-level state are respected.
+
+### Collections & comprehensions
+
+- List, tuple, and dictionary literals with constant or expression members.
+- List methods such as `.append()`, `.extend()`, `.insert()`, `.remove()`, and `.pop()`.
+- Membership tests (`x in items`, `x not in items`).
+- List comprehensions and generator expressions, including conditional clauses, are evaluated
+  eagerly into helper temporaries.
+
+### Functions & callables
+
+- Function definitions with positional and keyword-only arguments.
+- Returning values, early returns, and default parameter values.
+- Lambda expressions that delegate to supported expressions.
+- Calling custom helpers, Reduino primitives, and Python built-ins.
 
 ### Expressions & built-ins
 
 - Integer, float, string, and boolean literals.
-- Arithmetic, bitwise, boolean, and comparison operators.
+- Arithmetic, bitwise, boolean, comparison, and chained comparison operators.
 - Safe casts: `int()`, `float()`, `bool()`, `str()`.
-- Built-ins: `len()`, `abs()`, `max()`, `min()` (with helper snippets emitted automatically).
+- Built-ins: `len()`, `abs()`, `max()`, `min()`, `sum()`, and `range()` (with helper snippets
+  emitted automatically).
 
 ### Device primitives
 
