@@ -118,6 +118,27 @@ def test_parser_captures_target_port_anywhere(src):
     assert port == "COM7"
 
 
+def test_parser_handles_target_call_inside_expression(src):
+    code = src("""
+        from Reduino import target
+
+        print(target("COM9"))
+        assigned = target("COM10")
+        target("COM11")
+    """)
+
+    prog = parse(code)
+    port = getattr(prog, "target_port", None) or getattr(prog, "upload_port", None)
+    assert port == "COM11"
+
+    exprs = [
+        node.expr
+        for node in prog.setup_body
+        if isinstance(node, ExprStmt)
+    ]
+    assert all("target" not in expr for expr in exprs)
+
+
 def test_parser_resolves_string_concat_to_int(src):
     code = src("""
         from Reduino.Actuators import Led

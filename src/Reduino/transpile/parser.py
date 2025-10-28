@@ -1062,6 +1062,9 @@ RE_SLEEP_EXPR = re.compile(r"^\s*Sleep\s*\(\s*(.+?)\s*\)\s*$")
 
 # Build directive: regex for target device
 RE_TARGET_CALL = re.compile(r"""^\s*target\s*\(\s*(?:['"])?\s*([A-Za-z0-9:_\-./\\~]+)\s*(?:['"])?\s*\)\s*$""")
+RE_TARGET_INLINE = re.compile(
+    r"""(?<!\.)\btarget\s*\(\s*(?:['"])?\s*([A-Za-z0-9:_\-./\\~]+)\s*(?:['"])?\s*\)"""
+)
 
 # Top-level control
 RE_WHILE_TRUE     = re.compile(r"^\s*while\s+True\s*:\s*$")
@@ -1864,6 +1867,12 @@ def _parse_simple_lines(
             i += 1
             continue
 
+        inline_matches = list(RE_TARGET_INLINE.finditer(line))
+        if inline_matches:
+            ctx["target_port"] = inline_matches[-1].group(1)
+            i += 1
+            continue
+
         # --- IMPORTANT: handle assignments FIRST (single + tuple) ---
         # This updates env before we evaluate Led(...) or Sleep(...)
         assignment_nodes = _handle_assignment_ast(line, ctx, scope, depth)
@@ -2563,6 +2572,11 @@ def parse(src: str) -> Program:
         m = RE_TARGET_CALL.match(text)
         if m:
             ctx["target_port"] = m.group(1)
+            i += 1; continue
+
+        inline_matches = list(RE_TARGET_INLINE.finditer(text))
+        if inline_matches:
+            ctx["target_port"] = inline_matches[-1].group(1)
             i += 1; continue
 
         # ignore imports
