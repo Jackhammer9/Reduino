@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "Reduino"
-version = "0.0.2"
+version = "0.0.3"
 description = "Reduino transpiles Python scripts into efficient Arduino C++ and uploads automatically. A simple, intuitive way to control sensors, LEDs, and actuators without touching C++."
 readme = "README.md"
 requires-python = ">=3.10"
