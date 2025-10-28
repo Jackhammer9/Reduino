@@ -199,6 +199,43 @@ def test_emit_function_with_string_parameter(norm):
     assert "greeting = say_hi(greeting);" in cpp
 
 
+def test_emit_list_support(norm):
+    src = """
+    values = [1, 2, 3]
+    values.append(4)
+    values.remove(2)
+    total = values[0]
+    other = [i * 2 for i in range(3)]
+    values = other
+    size = len(other)
+    """
+
+    cpp = norm(emit(parse(dedent(src))))
+
+    assert "__redu_make_list<int>(1, 2, 3)" in cpp
+    assert "__redu_list_append(values, 4);" in cpp
+    assert "__redu_list_remove(values, 2);" in cpp
+    assert "__redu_list_get(values, 0)" in cpp
+    assert "__redu_list_from_range<int>(0, 3, 1, [&](int i) { return (i * 2); })" in cpp
+    assert "__redu_list_assign(values, other);" in cpp
+    assert "static_cast<int>(__redu_len(other))" in cpp
+
+
+def test_emit_led_pin_from_list_index(norm):
+    src = """
+    from Reduino.Actuators import Led
+
+    values = [1, 2, 3]
+    led = Led(pin=values[1])
+    """
+
+    cpp = norm(emit(parse(dedent(src))))
+
+    assert "__redu_make_list<int>(1, 2, 3)" in cpp
+    assert "bool __state_led = false;" in cpp
+    assert "pinMode(__redu_list_get(values, 1), OUTPUT);" in cpp
+
+
 def test_emit_function_parameter_types_from_callsite_literals(norm):
     src = """
     def add(a, b):

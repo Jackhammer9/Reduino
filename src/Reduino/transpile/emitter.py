@@ -53,6 +53,130 @@ auto __redu_len(const T &value) -> decltype(value.length()) {
   return value.length();
 }
 """
+
+LIST_HELPER_SNIPPET = """template <typename T>
+struct __redu_list {
+  T *data;
+  size_t size;
+  __redu_list() : data(nullptr), size(0) {}
+};
+
+template <typename T>
+__redu_list<T> __redu_make_list() {
+  return {};
+}
+
+template <typename T, typename First, typename... Rest>
+__redu_list<T> __redu_make_list(First first, Rest... rest) {
+  __redu_list<T> result;
+  result.size = sizeof...(Rest) + 1;
+  result.data = new T[result.size]{static_cast<T>(first), static_cast<T>(rest)...};
+  return result;
+}
+
+template <typename T>
+T &__redu_list_get(__redu_list<T> &list, int index) {
+  return list.data[index];
+}
+
+template <typename T>
+const T &__redu_list_get(const __redu_list<T> &list, int index) {
+  return list.data[index];
+}
+
+template <typename T>
+void __redu_list_append(__redu_list<T> &list, const T &value) {
+  T *next = new T[list.size + 1];
+  for (size_t i = 0; i < list.size; ++i) {
+    next[i] = list.data[i];
+  }
+  next[list.size] = value;
+  delete[] list.data;
+  list.data = next;
+  ++list.size;
+}
+
+template <typename T>
+void __redu_list_remove(__redu_list<T> &list, const T &value) {
+  if (list.size == 0) {
+    return;
+  }
+  size_t remove_index = list.size;
+  for (size_t i = 0; i < list.size; ++i) {
+    if (list.data[i] == value) {
+      remove_index = i;
+      break;
+    }
+  }
+  if (remove_index == list.size) {
+    return;
+  }
+  T *next = nullptr;
+  if (list.size > 1) {
+    next = new T[list.size - 1];
+    size_t dest = 0;
+    for (size_t i = 0; i < list.size; ++i) {
+      if (i == remove_index) {
+        continue;
+      }
+      next[dest++] = list.data[i];
+    }
+  }
+  delete[] list.data;
+  list.data = next;
+  --list.size;
+}
+
+template <typename T>
+void __redu_list_assign(__redu_list<T> &dest, const __redu_list<T> &source) {
+  if (&dest == &source) {
+    return;
+  }
+  if (dest.data != nullptr) {
+    delete[] dest.data;
+  }
+  dest.size = source.size;
+  dest.data = dest.size ? new T[dest.size] : nullptr;
+  for (size_t i = 0; i < dest.size; ++i) {
+    dest.data[i] = source.data[i];
+  }
+}
+
+template <typename T, typename Func>
+__redu_list<T> __redu_list_from_range(int start, int stop, int step, Func func) {
+  __redu_list<T> result;
+  if (step == 0) {
+    return result;
+  }
+  int count = 0;
+  if (step > 0) {
+    for (int value = start; value < stop; value += step) {
+      ++count;
+    }
+  } else {
+    for (int value = start; value > stop; value += step) {
+      ++count;
+    }
+  }
+  result.data = count > 0 ? new T[count] : nullptr;
+  result.size = 0;
+  if (step > 0) {
+    for (int value = start; value < stop; value += step) {
+      result.data[result.size++] = func(value);
+    }
+  } else {
+    for (int value = start; value > stop; value += step) {
+      result.data[result.size++] = func(value);
+    }
+  }
+  return result;
+}
+
+template <typename T>
+size_t __redu_len(const __redu_list<T> &value) {
+  return value.size;
+}
+"""
 SETUP_START = "void setup() {\n"
 SETUP_END = "}\n\n"
 LOOP_START = "void loop() {\n"
@@ -367,6 +491,8 @@ def emit(ast: Program) -> str:
 
     # Stitch sections
     parts: List[str] = [HEADER]
+    if "list" in helpers:
+        parts.append(LIST_HELPER_SNIPPET + "\n")
     if "len" in helpers:
         parts.append(LEN_HELPER_SNIPPET + "\n")
     if globals_:

@@ -63,6 +63,56 @@ _SAFE_CASTS = {
 
 _SAFE_NAME_REFERENCES = {"len", "abs", "max", "min", "int", "float", "bool", "str"}
 
+
+def _make_list_type_label(element_type: str) -> str:
+    """Return the canonical internal type label for a list of ``element_type``."""
+
+    return f"list[{element_type}]"
+
+
+def _is_list_type(label: str) -> bool:
+    """Return ``True`` if ``label`` represents a list type."""
+
+    return isinstance(label, str) and label.startswith("list[") and label.endswith("]")
+
+
+def _list_element_type(label: str) -> str:
+    """Extract the contained element type label from a list ``label``."""
+
+    if not _is_list_type(label):
+        return "int"
+    return label[5:-1]
+
+
+def _merge_element_types(types: List[str]) -> str:
+    """Merge element type labels used inside a list literal/comprehension."""
+
+    if not types:
+        return "int"
+    # Uniform element type → preserve it directly
+    unique = list(dict.fromkeys(types))
+    if len(unique) == 1:
+        return unique[0]
+
+    # Nested lists must all share the same signature
+    list_types = [t for t in unique if _is_list_type(t)]
+    if list_types:
+        if len(list_types) != len(unique):
+            raise ValueError("mixed list and scalar element types")
+        if len(set(list_types)) != 1:
+            raise ValueError("conflicting nested list element types")
+        return list_types[0]
+
+    if "String" in unique:
+        return "String"
+    if "float" in unique:
+        return "float"
+    if "int" in unique:
+        return "int"
+    if "bool" in unique:
+        return "bool"
+    return unique[0]
+
 _BUILTIN_CALL_RETURN_TYPES = {
     "int": "int",
     "float": "float",
@@ -211,6 +261,10 @@ def _eval_const(expr: str, env: dict):
 
             return min(ev(arg) for arg in n.args)
         
+        if isinstance(n, (ast.Tuple, ast.List)):
+            values = [ev(elt) for elt in n.elts]
+            return values if isinstance(n, ast.List) else tuple(values)
+
         raise ValueError("unsupported")
 
     def _apply_bin(opcls, a, b):
@@ -229,12 +283,14 @@ def _eval_const(expr: str, env: dict):
     tree = ast.parse(expr, mode="eval")
     return ev(tree.body)
 
+
 def _to_c_expr(
     expr: str, env: dict, ctx: Optional[Dict[str, object]] = None
 ) -> str:
     """Emit a C-like expression string from a safe Python expr; substitute known consts."""
 
     helper_set: Optional[Set[str]] = None
+    vars_env: Dict[str, object] = env if isinstance(env, dict) else {}
     if isinstance(env, dict):
         helpers = env.get("_helpers")
         if isinstance(helpers, set):
@@ -268,6 +324,8 @@ def _to_c_expr(
             return len(node.elts)
         if isinstance(node, ast.Name) and isinstance(env, dict):
             bound = env.get(node.id)
+            if isinstance(bound, _ExprStr):
+                return None
             if isinstance(bound, (str, tuple, list)):
                 return len(bound)
         return None
@@ -283,6 +341,115 @@ def _to_c_expr(
 
         if isinstance(n, ast.Name):
             return n.id
+
+        if isinstance(n, ast.Subscript):
+            if ctx is None:
+                raise ValueError("subscript requires context")
+            base = emit(n.value)
+            if isinstance(n.slice, ast.Slice):
+                raise ValueError("slices are unsupported")
+            if hasattr(ast, "Index") and isinstance(n.slice, ast.Index):  # type: ignore[attr-defined]
+                index_node = n.slice.value
+            else:
+                index_node = n.slice
+            index_expr = emit(index_node)
+            base_type = _infer_expr_type(
+                n.value,
+                ctx.get("var_types", {}),
+                ctx.get("functions", {}),
+                ctx.get("function_param_types", {}),
+                ctx.get("function_param_orders", {}),
+                ctx,
+            )
+            if _is_list_type(base_type):
+                _mark_helper("list")
+                return f"__redu_list_get({base}, {index_expr})"
+            return f"{base}[{index_expr}]"
+
+        if isinstance(n, ast.List):
+            if ctx is None:
+                raise ValueError("list literal requires context")
+            _mark_helper("list")
+            items = [emit(elt) for elt in n.elts]
+            elem_label = _list_element_type(
+                _infer_expr_type(
+                    n,
+                    ctx.get("var_types", {}),
+                    ctx.get("functions", {}),
+                    ctx.get("function_param_types", {}),
+                    ctx.get("function_param_orders", {}),
+                    ctx,
+                )
+            )
+            elem_cpp = _cpp_type(elem_label)
+            if not items:
+                return f"__redu_make_list<{elem_cpp}>()"
+            joined = ", ".join(items)
+            return f"__redu_make_list<{elem_cpp}>({joined})"
+
+        if isinstance(n, ast.ListComp):
+            if ctx is None:
+                raise ValueError("list comprehension requires context")
+            if len(n.generators) != 1:
+                raise ValueError("only single generator comprehensions supported")
+            comp = n.generators[0]
+            if comp.ifs:
+                raise ValueError("filtered comprehensions unsupported")
+            if not isinstance(comp.target, ast.Name):
+                raise ValueError("comprehension target must be a simple name")
+            if not (
+                isinstance(comp.iter, ast.Call)
+                and isinstance(comp.iter.func, ast.Name)
+                and comp.iter.func.id == "range"
+            ):
+                raise ValueError("only range() comprehensions supported")
+            range_args = comp.iter.args
+            if not 1 <= len(range_args) <= 3 or comp.iter.keywords:
+                raise ValueError("unsupported range() form in comprehension")
+
+            start_expr = "0"
+            stop_expr = emit(range_args[0]) if range_args else "0"
+            step_expr = "1"
+            if len(range_args) >= 2:
+                start_expr = emit(range_args[0])
+                stop_expr = emit(range_args[1])
+            if len(range_args) == 3:
+                step_expr = emit(range_args[2])
+
+            loop_name = comp.target.id
+            saved_env = vars_env.get(loop_name)
+            vars_env[loop_name] = _ExprStr(loop_name)
+            var_types_ctx = ctx.setdefault("var_types", {})
+            saved_type = var_types_ctx.get(loop_name)
+            var_types_ctx[loop_name] = "int"
+            try:
+                body_expr = emit(n.elt)
+            finally:
+                if saved_env is None:
+                    vars_env.pop(loop_name, None)
+                else:
+                    vars_env[loop_name] = saved_env
+                if saved_type is None:
+                    var_types_ctx.pop(loop_name, None)
+                else:
+                    var_types_ctx[loop_name] = saved_type
+
+            elem_label = _list_element_type(
+                _infer_expr_type(
+                    n,
+                    ctx.get("var_types", {}),
+                    ctx.get("functions", {}),
+                    ctx.get("function_param_types", {}),
+                    ctx.get("function_param_orders", {}),
+                    ctx,
+                )
+            )
+            elem_cpp = _cpp_type(elem_label)
+            _mark_helper("list")
+            return (
+                f"__redu_list_from_range<{elem_cpp}>({start_expr}, {stop_expr}, {step_expr}, "
+                f"[&](int {loop_name}) {{ return {body_expr}; }})"
+            )
 
         if isinstance(n, ast.BinOp) and type(n.op) in _BIN:
             return f"({emit(n.left)} {_BIN[type(n.op)]} {emit(n.right)})"
@@ -347,6 +514,18 @@ def _to_c_expr(
                 raise ValueError("unsupported f-string component")
 
             return expr or '""'
+
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute):
+            attr = n.func.attr
+            owner = emit(n.func.value)
+            if attr in {"append", "remove"}:
+                if len(n.args) != 1 or n.keywords:
+                    raise ValueError("unsupported list method usage")
+                _mark_helper("list")
+                arg_expr = emit(n.args[0])
+                helper = "__redu_list_append" if attr == "append" else "__redu_list_remove"
+                return f"{helper}({owner}, {arg_expr})"
+            raise ValueError("unsupported attribute call")
 
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name):
             fname = n.func.id
@@ -468,6 +647,67 @@ def _infer_expr_type(
 
     if isinstance(node, ast.Name):
         return var_types.get(node.id, "int")
+
+    if isinstance(node, ast.Subscript):
+        base_type = _infer_expr_type(
+            node.value,
+            var_types,
+            functions,
+            function_param_types,
+            function_param_orders,
+            ctx,
+        )
+        if _is_list_type(base_type):
+            return _list_element_type(base_type)
+        return "int"
+
+    if isinstance(node, ast.List):
+        elem_types = [
+            _infer_expr_type(
+                elt,
+                var_types,
+                functions,
+                function_param_types,
+                function_param_orders,
+                ctx,
+            )
+            for elt in node.elts
+        ]
+        element_type = _merge_element_types(elem_types)
+        return _make_list_type_label(element_type)
+
+    if isinstance(node, ast.ListComp):
+        if len(node.generators) != 1:
+            raise ValueError("unsupported list comprehension form")
+        comp = node.generators[0]
+        if comp.ifs:
+            raise ValueError("unsupported filtered list comprehension")
+        if not isinstance(comp.target, ast.Name):
+            raise ValueError("unsupported comprehension target")
+        if not (
+            isinstance(comp.iter, ast.Call)
+            and isinstance(comp.iter.func, ast.Name)
+            and comp.iter.func.id == "range"
+        ):
+            raise ValueError("unsupported comprehension iterator")
+        loop_name = comp.target.id
+        saved_type = var_types.get(loop_name)
+        var_types[loop_name] = "int"
+        try:
+            element_type = _infer_expr_type(
+                node.elt,
+                var_types,
+                functions,
+                function_param_types,
+                function_param_orders,
+                ctx,
+            )
+        finally:
+            if saved_type is None:
+                var_types.pop(loop_name, None)
+            else:
+                var_types[loop_name] = saved_type
+        return _make_list_type_label(element_type)
 
     if isinstance(node, ast.UnaryOp):
         if isinstance(node.op, ast.Not):
@@ -592,6 +832,10 @@ def _infer_expr_type(
 def _cpp_type(py_type: str) -> str:
     """Translate a coarse Python type label into a C++ declaration type."""
 
+    if _is_list_type(py_type):
+        element_cpp = _cpp_type(_list_element_type(py_type))
+        return f"__redu_list<{element_cpp}>"
+
     mapping = {
         "int": "int",
         "float": "float",
@@ -611,6 +855,8 @@ def _default_value_for_type(c_type: str) -> str:
         return "0.0"
     if c_type == "String":
         return '""'
+    if c_type.startswith("__redu_list<"):
+        return f"{c_type}()"
     return "0"
 
 
@@ -620,6 +866,53 @@ def _expr_has_name(node: ast.AST) -> bool:
     if isinstance(node, ast.Name):
         return node.id not in _SAFE_NAME_REFERENCES
     return any(_expr_has_name(child) for child in ast.iter_child_nodes(node))
+
+
+def _extract_call_argument(
+    args_src: str,
+    *,
+    position: int = 0,
+    keyword: Optional[str] = None,
+) -> Optional[str]:
+    """Return the source for a positional/keyword argument inside a call snippet.
+
+    ``args_src`` should be the textual contents that appear between the
+    parentheses of the original call expression. The helper uses ``ast`` to
+    parse the snippet, falling back to the raw string for the primary positional
+    argument if parsing fails. ``None`` is returned when no matching argument is
+    present.
+    """
+
+    text = args_src.strip()
+    if not text:
+        return None
+
+    try:
+        call_expr = ast.parse(f"__redu_tmp({text})", mode="eval").body
+    except SyntaxError:
+        if keyword is None and position == 0:
+            return text
+        return None
+
+    if not isinstance(call_expr, ast.Call):
+        if keyword is None and position == 0:
+            return text
+        return None
+
+    selected: Optional[ast.AST] = None
+    if keyword is not None:
+        for kw in call_expr.keywords:
+            if kw.arg == keyword:
+                selected = kw.value
+                break
+
+    if selected is None and position is not None and len(call_expr.args) > position:
+        selected = call_expr.args[position]
+
+    if selected is None:
+        return None
+
+    return ast.unparse(selected).strip()
 
 
 def _annotation_to_type_label(annotation: Optional[ast.AST]) -> str:
@@ -1019,6 +1312,7 @@ def _handle_assignment_ast(
     functions_map: Dict[str, str] = ctx.setdefault("functions", {})
     function_param_types = ctx.setdefault("function_param_types", {})
     function_param_orders = ctx.setdefault("function_param_orders", {})
+    list_info: Dict[str, Dict[str, Optional[int]]] = ctx.setdefault("list_info", {})
 
     def eval_or_expr(expr_node: ast.AST) -> Tuple[str, str, object, bool]:
         src = line[expr_node.col_offset : expr_node.end_col_offset]
@@ -1028,6 +1322,34 @@ def _handle_assignment_ast(
         except Exception:
             c_expr = _to_c_expr(src, vars_env, ctx)
             return src, c_expr, _ExprStr(c_expr), False
+
+    def list_length_from_ast(expr_node: ast.AST) -> Optional[int]:
+        if isinstance(expr_node, ast.List):
+            return len(expr_node.elts)
+        if isinstance(expr_node, ast.Name):
+            info = list_info.get(expr_node.id)
+            if info is not None:
+                return info.get("length")
+        return None
+
+    def record_list_state(
+        name: str,
+        type_label: str,
+        expr_node: ast.AST,
+        value_obj: object,
+    ) -> None:
+        if not _is_list_type(type_label):
+            list_info.pop(name, None)
+            return
+        helpers.add("list")
+        length: Optional[int] = None
+        if isinstance(value_obj, list):
+            length = len(value_obj)
+        else:
+            length = list_length_from_ast(expr_node)
+        entry = list_info.setdefault(name, {})
+        entry["elem"] = _list_element_type(type_label)
+        entry["length"] = length
 
     nodes: List[object] = []
     is_global_scope = scope == "setup" and depth == 0
@@ -1069,8 +1391,35 @@ def _handle_assignment_ast(
             function_param_orders,
             ctx,
         )
+        existing_type = var_types.get(target.id)
+        is_declared = target.id in declared
+        if is_declared and _is_list_type(existing_type or ""):
+            if not _is_list_type(inferred_type):
+                raise ValueError("cannot assign non-list to list variable")
+            new_length = None
+            if isinstance(value_obj, list):
+                new_length = len(value_obj)
+            else:
+                new_length = list_length_from_ast(value)
+            expected = list_info.get(target.id, {}).get("length")
+            if expected is not None and new_length is not None and expected != new_length:
+                raise ValueError("list assignment size mismatch")
+            old_elem = _list_element_type(existing_type) if existing_type else None
+            new_elem = _list_element_type(inferred_type)
+            if old_elem is not None and old_elem != new_elem:
+                raise ValueError("conflicting list element types")
+        if _is_list_type(inferred_type):
+            helpers.add("list")
         var_types[target.id] = inferred_type
         vars_env[target.id] = value_obj
+        record_list_state(target.id, inferred_type, value, value_obj)
+        needs_clone = is_declared and _is_list_type(inferred_type)
+        assign_expr = expr_c
+        assign_as_expr_stmt = False
+        if needs_clone:
+            assign_expr = f"__redu_list_assign({target.id}, {expr_c})"
+            assign_as_expr_stmt = True
+            helpers.add("list")
         if target.id not in declared:
             declared.add(target.id)
             cpp_type = _cpp_type(inferred_type)
@@ -1089,13 +1438,22 @@ def _handle_assignment_ast(
             if is_global_scope:
                 globals_list.append(decl)
                 if needs_runtime_assign:
-                    nodes.append(VarAssign(name=target.id, expr=expr_c))
+                    if assign_as_expr_stmt:
+                        nodes.append(ExprStmt(expr=assign_expr))
+                    else:
+                        nodes.append(VarAssign(name=target.id, expr=assign_expr))
             else:
                 nodes.append(decl)
                 if needs_runtime_assign:
-                    nodes.append(VarAssign(name=target.id, expr=expr_c))
+                    if assign_as_expr_stmt:
+                        nodes.append(ExprStmt(expr=assign_expr))
+                    else:
+                        nodes.append(VarAssign(name=target.id, expr=assign_expr))
         else:
-            nodes.append(VarAssign(name=target.id, expr=expr_c))
+            if assign_as_expr_stmt:
+                nodes.append(ExprStmt(expr=assign_expr))
+            else:
+                nodes.append(VarAssign(name=target.id, expr=assign_expr))
         return nodes
 
     if isinstance(target, (ast.Tuple, ast.List)):
@@ -1355,9 +1713,10 @@ def _parse_simple_lines(
     helpers = ctx.setdefault("helpers", set())
     vars.setdefault("_helpers", helpers)
     ctx.setdefault("globals", [])
-    ctx.setdefault("var_types", {})
+    var_types = ctx.setdefault("var_types", {})
     ctx.setdefault("var_declared", set())
     ctx.setdefault("functions", {})
+    list_info = ctx.setdefault("list_info", {})
 
     i = 0
     while i < len(snippet):
@@ -1809,23 +2168,26 @@ def _parse_simple_lines(
         m = RE_LED_DECL.match(line)
         if m:
             name, expr = m.group(1), m.group(2)
-            if not expr.strip():
+            arg_expr = _extract_call_argument(expr, keyword="pin")
+            if arg_expr is None:
+                arg_expr = _extract_call_argument(expr)
+            if arg_expr is None or not arg_expr.strip():
                 body.append(LedDecl(name=name, pin=13))
                 i += 1
                 continue
             try:
-                expr_ast = ast.parse(expr, mode="eval").body
+                expr_ast = ast.parse(arg_expr, mode="eval").body
             except Exception:
                 expr_ast = None
             if expr_ast is not None and not _expr_has_name(expr_ast):
                 try:
-                    pin_val = int(_eval_const(expr, vars))
+                    pin_val = int(_eval_const(arg_expr, vars))
                     body.append(LedDecl(name=name, pin=pin_val))
                     i += 1
                     continue
                 except Exception:
                     pass
-            pin_expr = _to_c_expr(expr, vars, ctx)
+            pin_expr = _to_c_expr(arg_expr, vars, ctx)
             body.append(LedDecl(name=name, pin=pin_expr))
             i += 1
             continue
@@ -1880,6 +2242,43 @@ def _parse_simple_lines(
             except Exception:
                 expr_c = None
             if expr_c is not None:
+                if (
+                    isinstance(expr_node, ast.Call)
+                    and isinstance(expr_node.func, ast.Attribute)
+                    and isinstance(expr_node.func.value, ast.Name)
+                    and expr_node.func.attr in {"append", "remove"}
+                ):
+                    owner_name = expr_node.func.value.id
+                    owner_type = var_types.get(owner_name)
+                    if owner_type and _is_list_type(owner_type):
+                        helpers.add("list")
+                        info = list_info.setdefault(owner_name, {})
+                        info.setdefault("elem", _list_element_type(owner_type))
+                        length = info.get("length")
+                        if length is not None:
+                            if expr_node.func.attr == "append":
+                                info["length"] = length + 1
+                            elif length > 0:
+                                info["length"] = length - 1
+                        current = vars.get(owner_name)
+                        arg_value: Optional[object] = None
+                        if expr_node.args:
+                            arg_node = expr_node.args[0]
+                            arg_src = line[arg_node.col_offset : arg_node.end_col_offset]
+                            try:
+                                arg_value = _eval_const(arg_src, vars)
+                            except Exception:
+                                arg_value = None
+                        if isinstance(current, list):
+                            if expr_node.func.attr == "append":
+                                current.append(arg_value)
+                            else:
+                                if arg_value is not None and arg_value in current:
+                                    current.remove(arg_value)
+                                elif arg_value is None and current:
+                                    current.pop(0)
+                        else:
+                            vars[owner_name] = _ExprStr(owner_name)
                 if _expr_has_name(expr_node):
                     body.append(ExprStmt(expr=expr_c))
                 else:
