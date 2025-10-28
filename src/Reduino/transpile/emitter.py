@@ -6,13 +6,18 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 
 from .ast import (
     BreakStmt,
-    FunctionDef,
     ExprStmt,
     ForRangeLoop,
+    FunctionDef,
     IfStatement,
+    LedBlink,
     LedDecl,
+    LedFadeIn,
+    LedFadeOut,
+    LedFlashPattern,
     LedOff,
     LedOn,
+    LedSetBrightness,
     LedToggle,
     Program,
     ReturnStmt,
@@ -193,6 +198,7 @@ def _emit_block(
     nodes: Iterable[object],
     led_pin: Dict[str, Union[int, str]],
     led_state: Dict[str, str],
+    led_brightness: Dict[str, str],
     indent: str = "  ",
     *,
     in_setup: bool = False,
@@ -201,9 +207,7 @@ def _emit_block(
     """Emit a block of statements as C++ source lines."""
     lines: List[str] = []
     for node in nodes:
-        # Structured control we support
         if type(node).__name__ == "Repeat":
-            # Repeat(count=int, body=list)
             count = getattr(node, "count", 0)
             body = getattr(node, "body", [])
             lines.append(f"{indent}for (int __i = 0; __i < {count}; ++__i) {{")
@@ -212,6 +216,7 @@ def _emit_block(
                     body,
                     led_pin,
                     led_state,
+                    led_brightness,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
@@ -223,13 +228,13 @@ def _emit_block(
         if isinstance(node, IfStatement):
             for idx, branch in enumerate(node.branches):
                 keyword = "if" if idx == 0 else "else if"
-                cond = branch.condition
-                lines.append(f"{indent}{keyword} ({cond}) {{")
+                lines.append(f"{indent}{keyword} ({branch.condition}) {{")
                 lines.extend(
                     _emit_block(
                         branch.body,
                         led_pin,
                         led_state,
+                        led_brightness,
                         indent + "  ",
                         in_setup=in_setup,
                         emitted_pin_modes=emitted_pin_modes,
@@ -243,6 +248,7 @@ def _emit_block(
                         node.else_body,
                         led_pin,
                         led_state,
+                        led_brightness,
                         indent + "  ",
                         in_setup=in_setup,
                         emitted_pin_modes=emitted_pin_modes,
@@ -258,6 +264,7 @@ def _emit_block(
                     node.body,
                     led_pin,
                     led_state,
+                    led_brightness,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
@@ -275,6 +282,7 @@ def _emit_block(
                     node.body,
                     led_pin,
                     led_state,
+                    led_brightness,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
@@ -290,6 +298,7 @@ def _emit_block(
                     node.try_body,
                     led_pin,
                     led_state,
+                    led_brightness,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
@@ -312,6 +321,7 @@ def _emit_block(
                         handler.body,
                         led_pin,
                         led_state,
+                        led_brightness,
                         indent + "  ",
                         in_setup=in_setup,
                         emitted_pin_modes=emitted_pin_modes,
@@ -354,11 +364,16 @@ def _emit_block(
             lines.append(f"{indent}break;")
             continue
 
+        def _ensure_led_tracking(name: str) -> Tuple[str, str, str]:
+            pin = led_pin.get(name, 13)
+            state_var = led_state.setdefault(name, f"__state_{name}")
+            brightness_var = led_brightness.setdefault(name, f"__brightness_{name}")
+            return _emit_expr(pin), state_var, brightness_var
+
         if isinstance(node, LedDecl):
-            # Record pin and create state symbol.
-            led_pin[node.name] = node.pin  # pin may be int or C-expr string
-            var = f"__state_{node.name}"
-            led_state[node.name] = var
+            led_pin[node.name] = node.pin
+            led_state[node.name] = f"__state_{node.name}"
+            led_brightness[node.name] = f"__brightness_{node.name}"
             if in_setup:
                 if emitted_pin_modes is None:
                     emitted_pin_modes = set()
@@ -369,33 +384,150 @@ def _emit_block(
                     lines.append(f"{indent}pinMode({pin_expr}, OUTPUT);")
             continue
 
-        elif isinstance(node, LedOn):
-            pin = led_pin.get(node.name, 13)
-            pin_code = _emit_expr(pin)
-            var = led_state.get(node.name, f"__state_{node.name}")
-            lines.append(f"{indent}{var} = true;")
+        if isinstance(node, LedOn):
+            pin_code, state_var, brightness_var = _ensure_led_tracking(node.name)
+            lines.append(f"{indent}{state_var} = true;")
+            lines.append(f"{indent}{brightness_var} = 255;")
             lines.append(f"{indent}digitalWrite({pin_code}, HIGH);")
+            continue
 
-        elif isinstance(node, LedOff):
-            pin = led_pin.get(node.name, 13)
-            pin_code = _emit_expr(pin)
-            var = led_state.get(node.name, f"__state_{node.name}")
-            lines.append(f"{indent}{var} = false;")
+        if isinstance(node, LedOff):
+            pin_code, state_var, brightness_var = _ensure_led_tracking(node.name)
+            lines.append(f"{indent}{state_var} = false;")
+            lines.append(f"{indent}{brightness_var} = 0;")
             lines.append(f"{indent}digitalWrite({pin_code}, LOW);")
+            continue
 
-        elif isinstance(node, LedToggle):
-            pin = led_pin.get(node.name, 13)
-            pin_code = _emit_expr(pin)
-            var = led_state.get(node.name, f"__state_{node.name}")
-            lines.append(f"{indent}{var} = !{var};")
+        if isinstance(node, LedToggle):
+            pin_code, state_var, brightness_var = _ensure_led_tracking(node.name)
+            lines.append(f"{indent}{state_var} = !{state_var};")
+            lines.append(f"{indent}{brightness_var} = {state_var} ? 255 : 0;")
             lines.append(
-                f"{indent}digitalWrite({pin_code}, {var} ? HIGH : LOW);"
+                f"{indent}digitalWrite({pin_code}, {state_var} ? HIGH : LOW);"
             )
+            continue
 
-        elif isinstance(node, Sleep):
+        if isinstance(node, LedSetBrightness):
+            pin_code, state_var, brightness_var = _ensure_led_tracking(node.name)
+            value_expr = _emit_expr(node.value)
+            lines.append(f"{indent}{{")
+            lines.append(f"{indent}  int __redu_brightness = {value_expr};")
+            lines.append(f"{indent}  if (__redu_brightness < 0) {{ __redu_brightness = 0; }}")
+            lines.append(f"{indent}  if (__redu_brightness > 255) {{ __redu_brightness = 255; }}")
+            lines.append(f"{indent}  {brightness_var} = __redu_brightness;")
+            lines.append(f"{indent}  {state_var} = {brightness_var} > 0;")
+            lines.append(f"{indent}  analogWrite({pin_code}, {brightness_var});")
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, LedBlink):
+            pin_code, state_var, brightness_var = _ensure_led_tracking(node.name)
+            duration_expr = _emit_expr(node.duration_ms)
+            times_expr = _emit_expr(node.times)
+            lines.append(f"{indent}{{")
+            lines.append(f"{indent}  int __redu_times = {times_expr};")
+            lines.append(f"{indent}  if (__redu_times < 0) {{ __redu_times = 0; }}")
+            lines.append(f"{indent}  for (int __redu_i = 0; __redu_i < __redu_times; ++__redu_i) {{")
+            lines.append(f"{indent}    {state_var} = true;")
+            lines.append(f"{indent}    {brightness_var} = 255;")
+            lines.append(f"{indent}    digitalWrite({pin_code}, HIGH);")
+            lines.append(f"{indent}    delay({duration_expr});")
+            lines.append(f"{indent}    {state_var} = false;")
+            lines.append(f"{indent}    {brightness_var} = 0;")
+            lines.append(f"{indent}    digitalWrite({pin_code}, LOW);")
+            lines.append(f"{indent}    delay({duration_expr});")
+            lines.append(f"{indent}  }}")
+            lines.append(f"{indent}  {state_var} = false;")
+            lines.append(f"{indent}  {brightness_var} = 0;")
+            lines.append(f"{indent}  digitalWrite({pin_code}, LOW);")
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, LedFadeIn):
+            pin_code, state_var, brightness_var = _ensure_led_tracking(node.name)
+            step_expr = _emit_expr(node.step)
+            delay_expr = _emit_expr(node.delay_ms)
+            lines.append(f"{indent}{{")
+            lines.append(f"{indent}  int __redu_step = {step_expr};")
+            lines.append(f"{indent}  if (__redu_step <= 0) {{ __redu_step = 1; }}")
+            lines.append(f"{indent}  int __redu_value = {brightness_var};")
+            lines.append(f"{indent}  if (__redu_value < 0) {{ __redu_value = 0; }}")
+            lines.append(f"{indent}  if (__redu_value > 255) {{ __redu_value = 255; }}")
+            lines.append(f"{indent}  while (__redu_value < 255) {{")
+            lines.append(f"{indent}    {brightness_var} = __redu_value;")
+            lines.append(f"{indent}    {state_var} = {brightness_var} > 0;")
+            lines.append(f"{indent}    analogWrite({pin_code}, {brightness_var});")
+            lines.append(f"{indent}    delay({delay_expr});")
+            lines.append(f"{indent}    __redu_value += __redu_step;")
+            lines.append(f"{indent}    if (__redu_value > 255) {{ __redu_value = 255; }}")
+            lines.append(f"{indent}  }}")
+            lines.append(f"{indent}  {brightness_var} = 255;")
+            lines.append(f"{indent}  {state_var} = true;")
+            lines.append(f"{indent}  analogWrite({pin_code}, 255);")
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, LedFadeOut):
+            pin_code, state_var, brightness_var = _ensure_led_tracking(node.name)
+            step_expr = _emit_expr(node.step)
+            delay_expr = _emit_expr(node.delay_ms)
+            lines.append(f"{indent}{{")
+            lines.append(f"{indent}  int __redu_step = {step_expr};")
+            lines.append(f"{indent}  if (__redu_step <= 0) {{ __redu_step = 1; }}")
+            lines.append(f"{indent}  int __redu_value = {brightness_var};")
+            lines.append(f"{indent}  if (__redu_value < 0) {{ __redu_value = 0; }}")
+            lines.append(f"{indent}  if (__redu_value > 255) {{ __redu_value = 255; }}")
+            lines.append(f"{indent}  while (__redu_value > 0) {{")
+            lines.append(f"{indent}    {brightness_var} = __redu_value;")
+            lines.append(f"{indent}    {state_var} = {brightness_var} > 0;")
+            lines.append(f"{indent}    analogWrite({pin_code}, {brightness_var});")
+            lines.append(f"{indent}    delay({delay_expr});")
+            lines.append(f"{indent}    __redu_value -= __redu_step;")
+            lines.append(f"{indent}    if (__redu_value < 0) {{ __redu_value = 0; }}")
+            lines.append(f"{indent}  }}")
+            lines.append(f"{indent}  {brightness_var} = 0;")
+            lines.append(f"{indent}  {state_var} = false;")
+            lines.append(f"{indent}  analogWrite({pin_code}, 0);")
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, LedFlashPattern):
+            if not node.pattern:
+                continue
+            pin_code, state_var, brightness_var = _ensure_led_tracking(node.name)
+            delay_expr = _emit_expr(node.delay_ms)
+            pattern_values = ", ".join(str(int(v)) for v in node.pattern)
+            lines.append(f"{indent}{{")
+            lines.append(f"{indent}  const int __redu_pattern[] = {{{pattern_values}}};")
+            lines.append(
+                f"{indent}  const size_t __redu_pattern_len = sizeof(__redu_pattern) / sizeof(__redu_pattern[0]);"
+            )
+            lines.append(f"{indent}  for (size_t __redu_i = 0; __redu_i < __redu_pattern_len; ++__redu_i) {{")
+            lines.append(f"{indent}    int __redu_value = __redu_pattern[__redu_i];")
+            lines.append(f"{indent}    if (__redu_value <= 0) {{")
+            lines.append(f"{indent}      {brightness_var} = 0;")
+            lines.append(f"{indent}      {state_var} = false;")
+            lines.append(f"{indent}      digitalWrite({pin_code}, LOW);")
+            lines.append(f"{indent}    }} else if (__redu_value == 1) {{")
+            lines.append(f"{indent}      {brightness_var} = 255;")
+            lines.append(f"{indent}      {state_var} = true;")
+            lines.append(f"{indent}      digitalWrite({pin_code}, HIGH);")
+            lines.append(f"{indent}    }} else {{")
+            lines.append(f"{indent}      if (__redu_value > 255) {{ __redu_value = 255; }}")
+            lines.append(f"{indent}      {brightness_var} = __redu_value;")
+            lines.append(f"{indent}      {state_var} = {brightness_var} > 0;")
+            lines.append(f"{indent}      analogWrite({pin_code}, {brightness_var});")
+            lines.append(f"{indent}    }}")
+            lines.append(f"{indent}    if (__redu_i + 1 < __redu_pattern_len) {{")
+            lines.append(f"{indent}      delay({delay_expr});")
+            lines.append(f"{indent}    }}")
+            lines.append(f"{indent}  }}")
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, Sleep):
             lines.append(f"{indent}delay({_emit_expr(node.ms)});")
 
-        # Unknown nodes are ignored for now
     return lines
 
 def emit(ast: Program) -> str:
@@ -403,6 +535,7 @@ def emit(ast: Program) -> str:
 
     led_pin: Dict[str, Union[int, str]] = {}
     led_state: Dict[str, str] = {}
+    led_brightness: Dict[str, str] = {}
     helpers = getattr(ast, "helpers", set())
 
     globals_: List[str] = []
@@ -426,21 +559,32 @@ def emit(ast: Program) -> str:
 
     for node in (setup_body or []):
         if isinstance(node, LedDecl):
-            var = f"__state_{node.name}"
-            led_state[node.name] = var
-            line = f"bool {var} = false;"
-            if line not in globals_:
-                globals_.append(line)
+            state_var = f"__state_{node.name}"
+            bright_var = f"__brightness_{node.name}"
+            led_state[node.name] = state_var
+            led_brightness[node.name] = bright_var
+            state_line = f"bool {state_var} = false;"
+            if state_line not in globals_:
+                globals_.append(state_line)
+            bright_line = f"int {bright_var} = 0;"
+            if bright_line not in globals_:
+                globals_.append(bright_line)
             led_pin[node.name] = node.pin
 
     for node in (loop_body or []):
         if isinstance(node, LedDecl):
-            var = f"__state_{node.name}"
+            state_var = f"__state_{node.name}"
+            bright_var = f"__brightness_{node.name}"
             if node.name not in led_state:
-                led_state[node.name] = var
-                line = f"bool {var} = false;"
-                if line not in globals_:
-                    globals_.append(line)
+                led_state[node.name] = state_var
+                state_line = f"bool {state_var} = false;"
+                if state_line not in globals_:
+                    globals_.append(state_line)
+            if node.name not in led_brightness:
+                led_brightness[node.name] = bright_var
+                bright_line = f"int {bright_var} = 0;"
+                if bright_line not in globals_:
+                    globals_.append(bright_line)
             if node.name not in led_pin:
                 led_pin[node.name] = node.pin
             # Ensure pinMode exists in setup for pins declared in loop
@@ -452,6 +596,7 @@ def emit(ast: Program) -> str:
             setup_body or [],
             led_pin,
             led_state,
+            led_brightness,
             in_setup=True,
             emitted_pin_modes=pin_mode_emitted,
         )
@@ -466,6 +611,7 @@ def emit(ast: Program) -> str:
                     getattr(n, "body", []),
                     led_pin,
                     led_state,
+                    led_brightness,
                     in_setup=False,
                     emitted_pin_modes=pin_mode_emitted,
                 )
@@ -477,6 +623,7 @@ def emit(ast: Program) -> str:
             loop_body or [],
             led_pin,
             led_state,
+            led_brightness,
             in_setup=False,
             emitted_pin_modes=pin_mode_emitted,
         )
@@ -490,6 +637,7 @@ def emit(ast: Program) -> str:
             getattr(fn, "body", []),
             dict(led_pin),
             dict(led_state),
+            dict(led_brightness),
             indent="  ",
             in_setup=False,
             emitted_pin_modes=set(),

@@ -48,6 +48,50 @@ class LedToggle:
 
 
 @dataclass
+class LedSetBrightness:
+    """Update the PWM brightness value for the LED."""
+
+    name: str
+    value: Union[int, str]
+
+
+@dataclass
+class LedBlink:
+    """Blink the LED with an on/off delay pattern."""
+
+    name: str
+    duration_ms: Union[int, str]
+    times: Union[int, str] = 1
+
+
+@dataclass
+class LedFadeIn:
+    """Gradually increase LED brightness to full."""
+
+    name: str
+    step: Union[int, str]
+    delay_ms: Union[int, str]
+
+
+@dataclass
+class LedFadeOut:
+    """Gradually decrease LED brightness to off."""
+
+    name: str
+    step: Union[int, str]
+    delay_ms: Union[int, str]
+
+
+@dataclass
+class LedFlashPattern:
+    """Drive the LED using an explicit flash sequence."""
+
+    name: str
+    pattern: List[int]
+    delay_ms: Union[int, str]
+
+
+@dataclass
 class Sleep:
     """Delay execution for ``ms`` milliseconds."""
 
