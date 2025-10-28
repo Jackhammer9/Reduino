@@ -1,269 +1,199 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Jackhammer9/Reduino/refs/heads/main/.github/workflows/Reduino.png" alt="Reduino project illustration" width="320" />
-</p>
+<div align="center">
+  <img src="https://raw.githubusercontent.com/Jackhammer9/Reduino/refs/heads/main/.github/workflows/Reduino.png" alt="Reduino" width="360" />
 
-<div align = "center">
+  <h1>Reduino</h1>
+  <p><em>Write friendly Python. Get Arduino-ready C++. Upload Easily.</em></p>
 
+  <!-- Badges -->
 
-<img src="https://img.shields.io/badge/License-GPLv3-blueviolet">
-
-</div> <br>
-
-<div align = "center">
-    
-
-![GitHub forks](https://img.shields.io/github/forks/Jackhammer9/Reduino?color=red&logo=Github&style=flat-square) ![GitHub watchers](https://img.shields.io/github/watchers/Jackhammer9/Reduino?logo=Github) ![GitHub Repo stars](https://img.shields.io/github/stars/Jackhammer9/Reduino?logo=Github) ![GitHub followers](https://img.shields.io/github/followers/Jackhammer9?logo=Github) 
-
-    
+  <a href="https://www.gnu.org/licenses/gpl-3.0">
+    <img alt="License" src="https://img.shields.io/badge/License-GPLv3-blueviolet" />
+  </a>
+  <a href="https://github.com/Jackhammer9/Reduino/stargazers">
+    <img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/Jackhammer9/Reduino?logo=Github" />
+  </a>
+  <a href="https://github.com/Jackhammer9/Reduino/network/members">
+    <img alt="GitHub forks" src="https://img.shields.io/github/forks/Jackhammer9/Reduino?color=red&logo=Github&style=flat-square" />
+  </a>
+  <a href="https://github.com/Jackhammer9/Reduino/watchers">
+    <img alt="GitHub watchers" src="https://img.shields.io/github/watchers/Jackhammer9/Reduino?logo=Github" />
+  </a>
+  <a href="https://github.com/Jackhammer9">
+    <img alt="GitHub followers" src="https://img.shields.io/github/followers/Jackhammer9?logo=Github" />
+  </a>
+  <a href="https://github.com/Jackhammer9/Reduino/pulls?q=is%3Apr+is%3Aclosed">
+    <img alt="Closed PRs" src="https://img.shields.io/github/issues-pr-closed/Jackhammer9/Reduino?logo=Github" />
+  </a>
+  <a href="https://github.com/Jackhammer9/Reduino/issues?q=is%3Aissue+is%3Aclosed">
+    <img alt="Closed issues" src="https://img.shields.io/github/issues-closed/Jackhammer9/Reduino?logo=Github" />
+  </a>
+  <a href="https://github.com/Jackhammer9/Reduino">
+    <img alt="Repo size" src="https://img.shields.io/github/repo-size/Jackhammer9/Reduino?logo=Github" />
+  </a>
+  <a href="https://github.com/Jackhammer9/Reduino/releases/latest">
+    <img alt="Latest release" src="https://img.shields.io/github/v/release/Jackhammer9/Reduino?display_name=tag&logo=Github" />
+  </a>
+  <a href="https://pypi.org/project/Reduino/">
+    <img alt="PyPI version" src="https://img.shields.io/pypi/v/Reduino?logo=pypi" />
+  </a>
+  <a href="https://pypistats.org/packages/reduino">
+    <img alt="PyPI downloads" src="https://img.shields.io/pypi/dm/Reduino?label=PyPI%20downloads&logo=pypi" />
+  </a>
 </div>
 
-<div align = "center">
-    
-![GitHub closed pull requests](https://img.shields.io/github/issues-pr-closed/Jackhammer9/Reduino?logo=Github)  ![GitHub closed issues](https://img.shields.io/github/issues-closed/Jackhammer9/Reduino?color=255%2C255%2C0&logo=Github)![GitHub repo size](https://img.shields.io/github/repo-size/Jackhammer9/Reduino?logo=Github)![GitHub release (latest by date)](https://img.shields.io/github/v/release/Jackhammer9/Reduino?display_name=tag&logo=Github)
-    
-</div>
-
-<div align = "center">
-    
-![PyPI - Downloads](https://img.shields.io/pypi/dm/Reduino?label=Pypi%20Downloads&logo=Pypi) ![PyPI](https://img.shields.io/pypi/v/Reduino?logo=pypi)
-    
-</div>
-
+---
 
 ## Table of contents
 
-- [API reference](#api-reference)
-- [Quick start](#quick-start)
-- [How Reduino works](#how-reduino-works)
-- [Supported devices & primitives](#supported-devices--primitives)
-- [Supported Python features](#supported-python-features)
-- [Testing](#testing)
-- [Contributing](#contributing)
-- [License](#license)
+* [Overview](#overview)
+* [Quick start](#quick-start)
+* [How it works](#how-it-works)
+* [API reference](#api-reference)
 
-## API reference
+  * [`Reduino.Actuators.Led`](#reduinoactuatorsled)
+  * [`Reduino.Time.Sleep`](#reduinotimesleep)
+  * [`Reduino.target`](#reduinotarget)
+* [Supported devices & primitives](#supported-devices--primitives)
+* [Supported Python features](#supported-python-features)
+* [Testing](#testing)
+* [Contributing](#contributing)
+* [License](#license)
 
-Reduino ships with a compact standard library that mirrors what the transpiled
-Arduino sketch will do. The tables below document every user-facing class and
-helper, including concrete snippets you can paste into your own automation
-scripts.
+## Overview
 
-### `Reduino.Actuators.Led`
-
-| Member | Description | Usage example |
-| ------ | ----------- | ------------- |
-| `Led(pin=13)` | Instantiate a virtual LED bound to the given Arduino pin. | ```python
-from Reduino.Actuators import Led
-led = Led(5)
-print(led.pin)
-``` |
-| `on()` | Switch the LED to its maximum brightness (`255`). | ```python
-led.on()
-assert led.get_state() is True
-``` |
-| `off()` | Turn the LED off (`brightness = 0`). | ```python
-led.off()
-assert led.get_state() is False
-``` |
-| `get_state()` | Return `True` when the LED is currently on. | ```python
-if not led.get_state():
-    led.on()
-``` |
-| `get_brightness()` | Report the PWM brightness (0-255). | ```python
-level = led.get_brightness()
-print(f"Current level: {level}")
-``` |
-| `set_brightness(value)` | Set a specific brightness; values outside 0-255 raise `ValueError`. | ```python
-led.set_brightness(128)
-``` |
-| `toggle()` | Flip between `on()` and `off()`. | ```python
-for _ in range(4):
-    led.toggle()
-``` |
-| `blink(duration_ms, times=1)` | Alternate between on/off with waits handled for you. | ```python
-led.blink(duration_ms=250, times=3)
-``` |
-| `fade_in(step=5, delay_ms=10)` | Gradually ramp up brightness. | ```python
-led.fade_in(step=10, delay_ms=20)
-``` |
-| `fade_out(step=5, delay_ms=10)` | Gradually ramp down brightness. | ```python
-led.fade_out(step=15, delay_ms=30)
-``` |
-| `flash_pattern(pattern, delay_ms=200)` | Walk through a list/tuple of `0`, `1`, or 0-255 values. | ```python
-led.flash_pattern([1, 0, 64, 128], delay_ms=150)
-``` |
-
-### `Reduino.Time.Sleep`
-
-| Member | Description | Usage example |
-| ------ | ----------- | ------------- |
-| `Sleep(duration_ms, sleep_func=None)` | Create a delay helper; inject `sleep_func` for custom timing in tests. | ```python
-from Reduino.Time import Sleep
-wait_half_second = Sleep(500)
-``` |
-| `seconds` | Property exposing the duration in seconds. | ```python
-print(wait_half_second.seconds)  # 0.5
-``` |
-| `wait()` | Block on the configured delay. | ```python
-wait_half_second.wait()
-``` |
-| `__call__()` | Calling the instance is equivalent to `wait()`. | ```python
-wait_half_second()
-``` |
-
-### `Reduino.target`
-
-| Member | Description | Usage example |
-| ------ | ----------- | ------------- |
-| `target(port, upload=True)` | Transpile the current script, emit Arduino-ready C++, and optionally upload it via PlatformIO. Returns the generated C++ string. | ```python
-from Reduino import target
-
-generated_cpp = target("/dev/ttyACM0", upload=False)
-print(generated_cpp)
-``` |
+Reduino lets you write a small, Pythonic DSL that transpiles to clean Arduino C++ and optionally flashes your board via PlatformIO. You get readable Python during development and reliable C++ on the device.
 
 ## Quick start
 
-1. **Install dependencies**
-   ```bash
-   pip install -e .
-   pip install platformio  # required for uploads
-   ```
-2. **Create a script**
-   ```python
-   from Reduino import target
-   from Reduino.Actuators import Led
-   from Reduino.Time import Sleep
+> **Requirements**: Python 3.10+, [PlatformIO](https://platformio.org/) for building/flashing.
 
-   target("/dev/ttyACM0", upload=False)
+```bash
+pip install Reduino
+pip install platformio  # required for uploads
+```
 
-   led = Led(13)
-   for _ in range(3):
-       led.toggle()
-       Sleep(250)
-   while True:
-       led.toggle()
-       Sleep(500)
-   ```
-3. **Run the script** – the transpiled C++ is printed and written into a temporary
-   PlatformIO project. If `upload=True`, Reduino also calls `pio run -t upload` for you.
+If `upload=True`, Reduino will run `pio run -t upload` for you in a temporary PlatformIO project (Arduino Uno by default). You can re-run `pio run` later to rebuild or flash again.
 
-Generated projects target an Arduino Uno by default and live in a temporary folder. You can
-re-run `pio run` manually to rebuild or flash again.
+## How it works
 
-## How Reduino works
+1. **Parse** – `Reduino.transpile.parser.parse()` builds an intermediate representation (IR) from your script.
+2. **Analyze** – Constant folding, control-flow preservation, and safety checks happen on the IR.
+3. **Emit** – `Reduino.transpile.emitter.emit()` produces Arduino-ready C++ (`main.cpp`).
+4. **Toolchain** – `Reduino.target()` writes a `platformio.ini` (serial port & board), and optionally calls PlatformIO to build/flash.
 
-1. **Parsing** – `Reduino.transpile.parser.parse()` reads your Python script and builds an
-   intermediate representation (`Program`, `LedDecl`, `Sleep`, etc.).
-2. **Analysis** – literals and expressions are folded where possible (for example constant
-   arithmetic or tuple unpacking), and control structures like `if`/`elif`/`else` are
-   preserved in the IR.
-3. **Emission** – `Reduino.transpile.emitter.emit()` turns the IR into Arduino-ready C++.
-   Pin declarations create `pinMode` calls and global state, and sleep nodes become
-   `delay()` statements.
-4. **Toolchain integration** – `Reduino.target()` calls `emit(parse(src))`, prints the result,
-   and uses the PlatformIO helpers in `Reduino.toolchain.pio` to write a `main.cpp` plus
-   `platformio.ini` pointing at the requested serial port.
+Hardware side effects only occur on the device after upload—host-side execution is side-effect free.
 
-The pipeline keeps parsing/emission side-effect free so your host machine never drives
-hardware directly—hardware interaction only happens once the generated sketch runs on the
-board.
+## API reference
 
-## Supported devices & primitives
+### `Reduino.Actuators.Led`
 
-| Primitive | Description | Key operations |
-|-----------|-------------|----------------|
-| `Reduino.Actuators.Led(pin=13)` | Represents a digital output LED. The helper mirrors the generated C++ and is safe to use in tests. | `.on()`, `.off()`, `.toggle()`, `.get_state()` |
-| `Reduino.Time.Sleep(ms)` | Millisecond delay helper that can also execute waits on the host side. | `.wait()`, callable shortcut (e.g. `Sleep(500)()`) |
-| `Reduino.target(port, upload=True)` | Transpile the calling module, emit C++, and optionally compile/upload with PlatformIO. | Prints generated code, writes a project, triggers `pio run`/`pio run -t upload` |
+| Member                                                           | Description                                                        |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `Led(pin=13)`                                                    | Create a virtual LED bound to an Arduino pin.                      |
+| `on()` / `off()`                                                 | Turn LED fully on/off.                                             |
+| `toggle()`                                                       | Flip between on/off.                                               |
+| `get_state()`                                                    | `True` if LED is currently on.                                     |
+| `get_brightness()` / `set_brightness(v)`                         | PWM level (0–255) read/write. Raises `ValueError` if out of range. |
+| `blink(duration_ms, times=1)`                                    | Blink helper with internal waits.                                  |
+| `fade_in(step=5, delay_ms=10)` / `fade_out(step=5, delay_ms=10)` | Gradual brightness ramp.                                           |
+| `flash_pattern(pattern, delay_ms=200)`                           | Iterate over `[0/1 or 0–255]` values.                              |
+
+**Example**
+
+```python
+from Reduino.Actuators import Led
+led = Led(5)
+led.set_brightness(128)
+led.blink(250, times=3)
+```
+
+### `Reduino.Time.Sleep`
+
+| Member                         | Description                                                |
+| ------------------------------ | ---------------------------------------------------------- |
+| `Sleep(ms, sleep_func=None)`   | Delay helper; custom `sleep_func` is injectable for tests. |
+| `.seconds`                     | Duration exposed in seconds.                               |
+| `.wait()` or call the instance | Perform the delay.                                         |
+
+**Example**
+
+```python
+from Reduino.Time import Sleep
+Sleep(500).wait()  # or Sleep(500)()
+```
+
+### `Reduino.target`
+
+| Member                      | Description                                                                                                                                                         |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `target(port, upload=True)` | Transpile the current module; return generated C++. If `upload` is true, also build & flash via PlatformIO. The last call wins if used multiple times at top level. |
+
+**Example**
+
+```python
+from Reduino import target
+cpp = target("/dev/ttyACM0", upload=False)
+print(cpp)
+```
+
 
 ## Supported Python features
 
-Reduino focuses on a lightweight DSL that feels like idiomatic Python while staying safe for
-static analysis. Every construct below is supported by the transpiler today.
+**Control flow**
 
-### Control flow
+* `while True:` becomes the Arduino `loop()` body.
+* `for` over `range(...)`, lists/tuples, or generator expressions.
+* `if` / `elif` / `else`, ternaries, `break`/`continue`.
 
-- `while True:` blocks become the Arduino `loop()` body.
-- `for` loops over `range(...)`, lists, tuples, or generator expressions execute with faithful
-  semantics (top-level loops are unrolled into setup statements when possible).
-- `if` / `elif` / `else`, nested conditionals, and ternary expressions are preserved.
-- `break` and `continue` map to their C++ equivalents inside loops.
+**Variables & assignment**
 
-### Variables & assignments
+* Regular assignment, tuple unpacking, pythonic swap `a, b = b, a`.
+* Augmented ops (`+=`, `-=`, ...). Branch-local vars are promoted safely.
 
-- Regular assignments, tuple unpacking, and the pythonic swap `a, b = b, a` emit matching C++.
-- Augmented assignments (`+=`, `-=`, `*=`, etc.) fold into the generated code where valid.
-- Branch-local assignments are promoted to globals so both sides of an `if` can mutate them
-  safely.
-- `global` statements for top-level state are respected.
+**Collections & comprehensions**
 
-### Collections & comprehensions
+* Lists/tuples/dicts, membership tests, list methods (`append`, `extend`, ...).
+* List comps & generators (evaluated eagerly into temps for safety).
 
-- List, tuple, and dictionary literals with constant or expression members.
-- List methods such as `.append()`, `.extend()`, `.insert()`, `.remove()`, and `.pop()`.
-- Membership tests (`x in items`, `x not in items`).
-- List comprehensions and generator expressions, including conditional clauses, are evaluated
-  eagerly into helper temporaries.
+**Functions & expressions**
 
-### Functions & callables
+* `def`/`return`, defaults, lambdas (on supported expressions).
+* Literals: int/float/str/bool; casts: `int/float/bool/str`.
+* Built-ins: `len`, `abs`, `max`, `min`, `sum`, `range`.
 
-- Function definitions with positional and keyword-only arguments.
-- Returning values, early returns, and default parameter values.
-- Lambda expressions that delegate to supported expressions.
-- Calling custom helpers, Reduino primitives, and Python built-ins.
+**Device primitives**
 
-### Expressions & built-ins
+* LED pin init creates `pinMode`; actions become `digitalWrite`/PWM; sleeps become `delay(ms)`.
 
-- Integer, float, string, and boolean literals.
-- Arithmetic, bitwise, boolean, comparison, and chained comparison operators.
-- Safe casts: `int()`, `float()`, `bool()`, `str()`.
-- Built-ins: `len()`, `abs()`, `max()`, `min()`, `sum()`, and `range()` (with helper snippets
-  emitted automatically).
+**Target directive**
 
-### Device primitives
-
-- Instantiate LEDs with literal pins or symbolic expressions; actions translate to
-  `digitalWrite` calls (`HIGH`, `LOW`, and toggled states are handled automatically).
-- Sleep expressions become `delay(ms)` even when the argument is symbolic.
-
-### Target directive
-
-- `target("PORT")` can appear anywhere at top level; the last call wins and is written into
-  `platformio.ini`.
+* `target("PORT")` can appear anywhere at top level; the last call wins and is written to `platformio.ini`.
 
 ## Testing
 
-Install the optional development dependencies and run the test suite:
-
 ```bash
-pip install -e .[dev]
+pip install pytest
 pytest
 ```
 
-The tests exercise parser behaviour, code generation, runtime helpers, and the public
-actuator/time primitives.
+The suite covers parsing, emission, runtime helpers, and public primitives.
 
 ## Contributing
 
-We welcome new actuators, sensors, and improvements to the transpiler. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for a detailed guide.
+PRs for new actuators/sensors and transpiler improvements are welcome. See **CONTRIBUTING.md** for guidelines and the IR/emitter architecture.
 
 ## License
 
-Reduino is released under the **GNU General Public License v3.0 (GPL-3.0)**.
+Reduino is distributed under **GPL-3.0**.
 
-This means you are free to:
-- Use, modify, and distribute Reduino under the terms of the GPL-3.0.
-- Build upon it in your own open-source projects, provided your derivative works remain open-source under the same license.
+You may:
 
-However, if you would like to:
-- Use Reduino in a **closed-source**, **commercial**, or **proprietary** product,
-- Obtain a **custom or dual license** for integration in commercial environments,
+* Use, modify, and distribute under GPL-3.0.
+* Build upon it in your open-source projects (derivatives must also be GPL-3.0).
 
-please reach out for licensing options:
+For **closed-source** or **commercial** use, dual/custom licensing is available.
 
-📧 **Commercial inquiries:** arnavbajaj9@gmail.com
+**Commercial inquiries:** [arnavbajaj9@gmail.com](mailto:arnavbajaj9@gmail.com)
 
 ---
 
