@@ -492,6 +492,8 @@ def _emit_block(
             continue
 
         if isinstance(node, LedFlashPattern):
+            if not node.pattern:
+                continue
             pin_code, state_var, brightness_var = _ensure_led_tracking(node.name)
             delay_expr = _emit_expr(node.delay_ms)
             pattern_values = ", ".join(str(int(v)) for v in node.pattern)

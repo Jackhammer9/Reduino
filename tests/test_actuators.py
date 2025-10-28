@@ -193,3 +193,33 @@ def test_led_emitter_fade_and_flash_helpers(norm):
     assert "analogWrite(9, __brightness_led);" in text
     assert "const int __redu_pattern[] = {1, 0, 64};" in text
     assert "delay(50);" in text
+
+
+def test_led_emitter_flash_pattern_from_variable(norm):
+    src_code = """
+    from Reduino.Actuators import Led
+
+    pattern = [1, 0, 1, 0]
+    led = Led(pin=7)
+    led.flash_pattern(pattern, delay_ms=250)
+    """
+
+    cpp = emit(parse(src_code))
+    text = norm(cpp)
+
+    assert "const int __redu_pattern[] = {1, 0, 1, 0};" in text
+    assert "delay(250);" in text
+
+
+def test_led_emitter_flash_pattern_empty(norm):
+    src_code = """
+    from Reduino.Actuators import Led
+
+    led = Led(pin=8)
+    led.flash_pattern([], delay_ms=100)
+    """
+
+    cpp = emit(parse(src_code))
+    text = norm(cpp)
+
+    assert "__redu_pattern" not in text

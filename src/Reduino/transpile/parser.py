@@ -2390,19 +2390,41 @@ def _parse_simple_lines(
                 delay_arg = _extract_call_argument(args_src, position=1)
             pattern_values: List[int] = []
             if pattern_arg and pattern_arg.strip():
+                pattern_src = pattern_arg.strip()
+
+                def _coerce_pattern(value: object) -> None:
+                    if not isinstance(value, (list, tuple)):
+                        raise ValueError("flash_pattern requires a literal pattern list")
+                    for entry in value:
+                        if isinstance(entry, bool):
+                            pattern_values.append(1 if entry else 0)
+                        elif isinstance(entry, (int, float)):
+                            pattern_values.append(int(entry))
+                        else:
+                            raise ValueError("flash_pattern values must be numeric")
+
+                resolved: Optional[object] = None
                 try:
-                    literal = ast.literal_eval(pattern_arg)
-                except Exception as exc:  # pragma: no cover - defensive
-                    raise ValueError("flash_pattern requires a literal pattern list") from exc
-                if not isinstance(literal, (list, tuple)):
-                    raise ValueError("flash_pattern requires a literal pattern list")
-                for entry in literal:
-                    if isinstance(entry, bool):
-                        pattern_values.append(1 if entry else 0)
-                    elif isinstance(entry, (int, float)):
-                        pattern_values.append(int(entry))
-                    else:
-                        raise ValueError("flash_pattern values must be numeric")
+                    resolved = ast.literal_eval(pattern_src)
+                except Exception:
+                    try:
+                        expr_node = ast.parse(pattern_src, mode="eval").body
+                    except Exception as exc:  # pragma: no cover - defensive
+                        raise ValueError("flash_pattern requires a literal pattern list") from exc
+                    if isinstance(expr_node, ast.Name):
+                        var_name = expr_node.id
+                        value = vars.get(var_name)
+                        if isinstance(value, _ExprStr):
+                            raise ValueError("flash_pattern requires a literal pattern list")
+                        resolved = value
+                    if resolved is None:
+                        raise ValueError("flash_pattern requires a literal pattern list")
+                else:
+                    _coerce_pattern(resolved)
+                    resolved = None
+
+                if resolved is not None:
+                    _coerce_pattern(resolved)
             delay_val = _resolve_numeric_arg(delay_arg, 200)
             body.append(LedFlashPattern(name=name, pattern=pattern_values, delay_ms=delay_val))
             i += 1
