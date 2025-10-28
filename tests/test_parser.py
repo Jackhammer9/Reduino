@@ -204,6 +204,46 @@ def test_parser_serial_monitor_accepts_expressions(src):
     assert write_nodes[0].value == "base_rate"
 
 
+def test_parser_serial_monitor_write_led_state(src):
+    code = src(
+        """
+        from Reduino.Actuators import Led
+        from Reduino.Utils import SerialMonitor
+
+        led = Led()
+        monitor = SerialMonitor()
+        monitor.write(led.get_state())
+        """
+    )
+
+    prog = parse(code)
+
+    write_nodes = [node for node in prog.setup_body if isinstance(node, SerialWrite)]
+    assert len(write_nodes) == 1
+    assert write_nodes[0].value == "__state_led"
+
+
+def test_parser_serial_monitor_read_expression(src):
+    code = src(
+        """
+        from Reduino.Utils import SerialMonitor
+
+        monitor = SerialMonitor()
+        message = monitor.read()
+        """
+    )
+
+    prog = parse(code)
+
+    globals_ = [node for node in prog.global_decls if isinstance(node, VarDecl)]
+    assert len(globals_) == 1
+    assert globals_[0].name == "message"
+    assert globals_[0].c_type == "String"
+
+    assigns = [node for node in prog.setup_body if isinstance(node, VarAssign)]
+    assert any(assign.name == "message" and assign.expr == "Serial.readStringUntil('\\n')" for assign in assigns)
+
+
 def test_parser_allows_led_pin_from_list_index(src):
     code = src("""
         from Reduino.Actuators import Led
