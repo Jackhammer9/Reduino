@@ -109,10 +109,9 @@ led.blink(250, times=3)
 
 ### `Reduino.Time.Sleep`
 
-| Member                         | Description                                                |
-| ------------------------------ | ---------------------------------------------------------- |
-| `Sleep(ms, sleep_func=None)`   | Delay helper; custom `sleep_func` is injectable for tests. |
-| `.seconds`                     | Duration exposed in seconds.                               |             
+| Member                       | Description                                                |
+| ---------------------------- | ---------------------------------------------------------- |
+| `Sleep(ms, sleep_func=None)` | Delay helper; custom `sleep_func` is injectable for tests. |
 
 **Example**
 
