@@ -15,9 +15,14 @@ from .ast import (
     ForRangeLoop,
     FunctionDef,
     IfStatement,
+    LedBlink,
     LedDecl,
+    LedFadeIn,
+    LedFadeOut,
+    LedFlashPattern,
     LedOff,
     LedOn,
+    LedSetBrightness,
     LedToggle,
     Program,
     ReturnStmt,
@@ -1042,6 +1047,11 @@ RE_LED_DECL   = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Led\s*\(\s*(.*?)\s*\)\s*$"
 RE_LED_ON         = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.on\(\s*\)\s*$")
 RE_LED_OFF        = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.off\(\s*\)\s*$")
 RE_LED_TOGGLE     = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.toggle\(\s*\)\s*$")
+RE_LED_SET_BRIGHTNESS = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.set_brightness\(\s*(.*)\s*\)\s*$")
+RE_LED_BLINK      = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.blink\(\s*(.*)\s*\)\s*$")
+RE_LED_FADE_IN    = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.fade_in\(\s*(.*)\s*\)\s*$")
+RE_LED_FADE_OUT   = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.fade_out\(\s*(.*)\s*\)\s*$")
+RE_LED_FLASH_PATTERN = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.flash_pattern\(\s*(.*)\s*\)\s*$")
 
 # Serial primitives
 RE_SERIAL_DECL    = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*SerialMonitor\s*\(\s*(.*?)\s*\)\s*$")
@@ -1769,6 +1779,25 @@ def _parse_simple_lines(
     ctx.setdefault("functions", {})
     list_info = ctx.setdefault("list_info", {})
 
+    def _resolve_numeric_arg(arg_src: Optional[str], default: Union[int, str]) -> Union[int, str]:
+        if arg_src is None or not arg_src.strip():
+            return default
+        try:
+            expr_ast = ast.parse(arg_src, mode="eval").body
+        except Exception:
+            expr_ast = None
+        if expr_ast is not None and not _expr_has_name(expr_ast):
+            try:
+                value = _eval_const(arg_src, vars)
+            except Exception:
+                pass
+            else:
+                if isinstance(value, bool):
+                    return 1 if value else 0
+                if isinstance(value, (int, float)):
+                    return int(value)
+        return _to_c_expr(arg_src, vars, ctx)
+
     i = 0
     while i < len(snippet):
         raw = snippet[i]
@@ -2291,6 +2320,91 @@ def _parse_simple_lines(
         m = RE_LED_TOGGLE.match(line)
         if m:
             body.append(LedToggle(name=m.group(1)))
+            i += 1
+            continue
+
+        m = RE_LED_SET_BRIGHTNESS.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            value_arg = _extract_call_argument(args_src, keyword="value")
+            if value_arg is None:
+                value_arg = _extract_call_argument(args_src)
+            value = _resolve_numeric_arg(value_arg, 0)
+            body.append(LedSetBrightness(name=name, value=value))
+            i += 1
+            continue
+
+        m = RE_LED_BLINK.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            duration_arg = _extract_call_argument(args_src, keyword="duration_ms")
+            if duration_arg is None:
+                duration_arg = _extract_call_argument(args_src)
+            times_arg = _extract_call_argument(args_src, keyword="times")
+            if times_arg is None:
+                times_arg = _extract_call_argument(args_src, position=1)
+            duration = _resolve_numeric_arg(duration_arg, 0)
+            times = _resolve_numeric_arg(times_arg, 1)
+            body.append(LedBlink(name=name, duration_ms=duration, times=times))
+            i += 1
+            continue
+
+        m = RE_LED_FADE_IN.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            step_arg = _extract_call_argument(args_src, keyword="step")
+            if step_arg is None:
+                step_arg = _extract_call_argument(args_src)
+            delay_arg = _extract_call_argument(args_src, keyword="delay_ms")
+            if delay_arg is None:
+                delay_arg = _extract_call_argument(args_src, position=1)
+            step = _resolve_numeric_arg(step_arg, 5)
+            delay_val = _resolve_numeric_arg(delay_arg, 10)
+            body.append(LedFadeIn(name=name, step=step, delay_ms=delay_val))
+            i += 1
+            continue
+
+        m = RE_LED_FADE_OUT.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            step_arg = _extract_call_argument(args_src, keyword="step")
+            if step_arg is None:
+                step_arg = _extract_call_argument(args_src)
+            delay_arg = _extract_call_argument(args_src, keyword="delay_ms")
+            if delay_arg is None:
+                delay_arg = _extract_call_argument(args_src, position=1)
+            step = _resolve_numeric_arg(step_arg, 5)
+            delay_val = _resolve_numeric_arg(delay_arg, 10)
+            body.append(LedFadeOut(name=name, step=step, delay_ms=delay_val))
+            i += 1
+            continue
+
+        m = RE_LED_FLASH_PATTERN.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            pattern_arg = _extract_call_argument(args_src, keyword="pattern")
+            if pattern_arg is None:
+                pattern_arg = _extract_call_argument(args_src)
+            delay_arg = _extract_call_argument(args_src, keyword="delay_ms")
+            if delay_arg is None:
+                delay_arg = _extract_call_argument(args_src, position=1)
+            pattern_values: List[int] = []
+            if pattern_arg and pattern_arg.strip():
+                try:
+                    literal = ast.literal_eval(pattern_arg)
+                except Exception as exc:  # pragma: no cover - defensive
+                    raise ValueError("flash_pattern requires a literal pattern list") from exc
+                if not isinstance(literal, (list, tuple)):
+                    raise ValueError("flash_pattern requires a literal pattern list")
+                for entry in literal:
+                    if isinstance(entry, bool):
+                        pattern_values.append(1 if entry else 0)
+                    elif isinstance(entry, (int, float)):
+                        pattern_values.append(int(entry))
+                    else:
+                        raise ValueError("flash_pattern values must be numeric")
+            delay_val = _resolve_numeric_arg(delay_arg, 200)
+            body.append(LedFlashPattern(name=name, pattern=pattern_values, delay_ms=delay_val))
             i += 1
             continue
 
