@@ -76,9 +76,9 @@ class Led:
 
         for _ in range(times):
             self.on()
-            Sleep(duration_ms).wait()
+            Sleep(duration_ms)
             self.off()
-            Sleep(duration_ms).wait()
+            Sleep(duration_ms)
 
     def fade_in(self, step: int = 5, delay_ms: int = 10) -> None:
         """Gradually increase brightness towards 255."""
@@ -91,7 +91,7 @@ class Led:
         current = max(0, min(255, int(self.brightness)))
         while current < 255:
             self.set_brightness(current)
-            Sleep(delay_ms).wait()
+            Sleep(delay_ms)
             current = min(255, current + step)
         self.set_brightness(255)
 
@@ -106,7 +106,7 @@ class Led:
         current = max(0, min(255, int(self.brightness)))
         while current > 0:
             self.set_brightness(current)
-            Sleep(delay_ms).wait()
+            Sleep(delay_ms)
             current = max(0, current - step)
         self.set_brightness(0)
 
@@ -129,7 +129,7 @@ class Led:
                 self.set_brightness(int(entry))
 
             if index != len(pattern_list) - 1:
-                Sleep(delay_ms).wait()
+                Sleep(delay_ms)
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper
         return (
