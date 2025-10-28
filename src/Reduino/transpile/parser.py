@@ -519,7 +519,9 @@ def _to_c_expr(
 
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute):
             attr = n.func.attr
-            owner = emit(n.func.value)
+            owner_node = n.func.value
+            owner = emit(owner_node)
+
             if attr in {"append", "remove"}:
                 if len(n.args) != 1 or n.keywords:
                     raise ValueError("unsupported list method usage")
@@ -527,6 +529,25 @@ def _to_c_expr(
                 arg_expr = emit(n.args[0])
                 helper = "__redu_list_append" if attr == "append" else "__redu_list_remove"
                 return f"{helper}({owner}, {arg_expr})"
+
+            if attr == "get_state":
+                if n.args or n.keywords:
+                    raise ValueError("unsupported attribute call")
+                if isinstance(owner_node, ast.Name) and ctx is not None:
+                    led_names = ctx.get("led_names", set())
+                    if owner_node.id in led_names:
+                        return f"__state_{owner_node.id}"
+                raise ValueError("unsupported attribute call")
+
+            if attr == "read":
+                if n.args or n.keywords:
+                    raise ValueError("unsupported attribute call")
+                if isinstance(owner_node, ast.Name) and ctx is not None:
+                    serials = ctx.get("serial_monitors", set())
+                    if owner_node.id in serials:
+                        return "Serial.readStringUntil('\\n')"
+                raise ValueError("unsupported attribute call")
+
             raise ValueError("unsupported attribute call")
 
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name):
@@ -756,6 +777,22 @@ def _infer_expr_type(
 
     if isinstance(node, ast.JoinedStr):
         return "String"
+
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+        attr = node.func.attr
+        owner = node.func.value
+        if attr == "get_state" and isinstance(owner, ast.Name):
+            if ctx is None:
+                return "bool"
+            led_names = ctx.get("led_names", set())
+            if owner.id in led_names:
+                return "bool"
+        if attr == "read" and isinstance(owner, ast.Name):
+            if ctx is None:
+                return "String"
+            serials = ctx.get("serial_monitors", set())
+            if owner.id in serials:
+                return "String"
 
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
         fname = node.func.id
@@ -2191,6 +2228,7 @@ def _parse_simple_lines(
                 arg_expr = _extract_call_argument(expr)
             if arg_expr is None or not arg_expr.strip():
                 body.append(LedDecl(name=name, pin=13))
+                ctx.setdefault("led_names", set()).add(name)
                 i += 1
                 continue
             try:
@@ -2201,12 +2239,14 @@ def _parse_simple_lines(
                 try:
                     pin_val = int(_eval_const(arg_expr, vars))
                     body.append(LedDecl(name=name, pin=pin_val))
+                    ctx.setdefault("led_names", set()).add(name)
                     i += 1
                     continue
                 except Exception:
                     pass
             pin_expr = _to_c_expr(arg_expr, vars, ctx)
             body.append(LedDecl(name=name, pin=pin_expr))
+            ctx.setdefault("led_names", set()).add(name)
             i += 1
             continue
 
