@@ -10,6 +10,8 @@ from Reduino.transpile.ast import (
     IfStatement,
     LedDecl,
     ReturnStmt,
+    SerialMonitorDecl,
+    SerialWrite,
     Sleep,
     TryStatement,
     VarAssign,
@@ -157,6 +159,49 @@ def test_parser_preserves_symbolic_expressions(src):
     led_nodes = [node for node in prog.setup_body if isinstance(node, LedDecl)]
     assert len(led_nodes) == 1
     assert led_nodes[0].pin == "(pin_base + offset)"
+
+
+def test_parser_serial_monitor_decl_and_write(src):
+    code = src(
+        """
+        from Reduino.Utils import SerialMonitor
+
+        monitor = SerialMonitor(baud_rate=115200)
+        monitor.write("hello")
+        """
+    )
+
+    prog = parse(code)
+
+    serial_nodes = [node for node in prog.setup_body if isinstance(node, SerialMonitorDecl)]
+    assert len(serial_nodes) == 1
+    assert serial_nodes[0].baud == 115200
+
+    write_nodes = [node for node in prog.setup_body if isinstance(node, SerialWrite)]
+    assert len(write_nodes) == 1
+    assert write_nodes[0].value == '"hello"'
+
+
+def test_parser_serial_monitor_accepts_expressions(src):
+    code = src(
+        """
+        from Reduino.Utils import SerialMonitor
+
+        base_rate = 4800
+        monitor = SerialMonitor(base_rate * 2)
+        monitor.write(base_rate)
+        """
+    )
+
+    prog = parse(code)
+
+    serial_nodes = [node for node in prog.setup_body if isinstance(node, SerialMonitorDecl)]
+    assert len(serial_nodes) == 1
+    assert serial_nodes[0].baud == "(base_rate * 2)"
+
+    write_nodes = [node for node in prog.setup_body if isinstance(node, SerialWrite)]
+    assert len(write_nodes) == 1
+    assert write_nodes[0].value == "base_rate"
 
 
 def test_parser_allows_led_pin_from_list_index(src):
