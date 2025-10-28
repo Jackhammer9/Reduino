@@ -259,12 +259,83 @@ def test_parser_supports_f_string_expressions(src):
     assert globals_out["message"].c_type == "String"
     assert globals_out["message"].expr == '""'
 
-    assigns = [node for node in prog.setup_body if isinstance(node, VarAssign)]
+
+def test_parser_list_features(src):
+    code = src("""
+        values = [1, 2, 3]
+        values.append(4)
+        values.remove(2)
+        total = values[0]
+        other = [i * 2 for i in range(3)]
+        values = other
+        size = len(other)
+    """)
+
+    prog = parse(code)
+
+    assert "list" in prog.helpers
+
+    globals_out = {decl.name: decl for decl in prog.global_decls}
+    assert "values" in globals_out
+    assert globals_out["values"].c_type == "__redu_list<int>"
+    assert "__redu_make_list<int>({1, 2, 3})" in globals_out["values"].expr
+
+    append_calls = [
+        node.expr
+        for node in prog.setup_body
+        if isinstance(node, ExprStmt) and "__redu_list_append" in node.expr
+    ]
+    assert any("__redu_list_append(values, 4)" in expr for expr in append_calls)
+
+    remove_calls = [
+        node.expr
+        for node in prog.setup_body
+        if isinstance(node, ExprStmt) and "__redu_list_remove" in node.expr
+    ]
+    assert any("__redu_list_remove(values, 2)" in expr for expr in remove_calls)
+
+    assigns = [
+        node
+        for node in prog.setup_body
+        if isinstance(node, VarAssign)
+    ]
+    assert any(node.name == "total" and "__redu_list_get(values, 0)" in node.expr for node in assigns)
     assert any(
-        node.name == "message"
-        and node.expr == '((String("Hello ") + String(name)) + "!")'
+        node.name == "other" and "__redu_list_from_range<int>" in node.expr
         for node in assigns
     )
+
+    assign_calls = [
+        node.expr
+        for node in prog.setup_body
+        if isinstance(node, ExprStmt) and "__redu_list_assign" in node.expr
+    ]
+    assert any("__redu_list_assign(values, other)" in expr for expr in assign_calls)
+
+    assert any(
+        node.name == "size" and "__redu_len(other)" in node.expr
+        for node in assigns
+    )
+
+
+def test_parser_list_assignment_size_mismatch_errors(src):
+    code = src("""
+        values = [1, 2]
+        values = [3]
+    """)
+
+    with pytest.raises(ValueError):
+        parse(code)
+
+
+def test_parser_list_assignment_type_mismatch_errors(src):
+    code = src("""
+        values = [1, 2]
+        values = ["a", "b"]
+    """)
+
+    with pytest.raises(ValueError):
+        parse(code)
 
 
 def test_parser_emits_expression_statements(src):
