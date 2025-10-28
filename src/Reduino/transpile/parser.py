@@ -868,6 +868,53 @@ def _expr_has_name(node: ast.AST) -> bool:
     return any(_expr_has_name(child) for child in ast.iter_child_nodes(node))
 
 
+def _extract_call_argument(
+    args_src: str,
+    *,
+    position: int = 0,
+    keyword: Optional[str] = None,
+) -> Optional[str]:
+    """Return the source for a positional/keyword argument inside a call snippet.
+
+    ``args_src`` should be the textual contents that appear between the
+    parentheses of the original call expression. The helper uses ``ast`` to
+    parse the snippet, falling back to the raw string for the primary positional
+    argument if parsing fails. ``None`` is returned when no matching argument is
+    present.
+    """
+
+    text = args_src.strip()
+    if not text:
+        return None
+
+    try:
+        call_expr = ast.parse(f"__redu_tmp({text})", mode="eval").body
+    except SyntaxError:
+        if keyword is None and position == 0:
+            return text
+        return None
+
+    if not isinstance(call_expr, ast.Call):
+        if keyword is None and position == 0:
+            return text
+        return None
+
+    selected: Optional[ast.AST] = None
+    if keyword is not None:
+        for kw in call_expr.keywords:
+            if kw.arg == keyword:
+                selected = kw.value
+                break
+
+    if selected is None and position is not None and len(call_expr.args) > position:
+        selected = call_expr.args[position]
+
+    if selected is None:
+        return None
+
+    return ast.unparse(selected).strip()
+
+
 def _annotation_to_type_label(annotation: Optional[ast.AST]) -> str:
     """Translate a Python annotation node into an internal type label."""
 
@@ -2121,23 +2168,26 @@ def _parse_simple_lines(
         m = RE_LED_DECL.match(line)
         if m:
             name, expr = m.group(1), m.group(2)
-            if not expr.strip():
+            arg_expr = _extract_call_argument(expr, keyword="pin")
+            if arg_expr is None:
+                arg_expr = _extract_call_argument(expr)
+            if arg_expr is None or not arg_expr.strip():
                 body.append(LedDecl(name=name, pin=13))
                 i += 1
                 continue
             try:
-                expr_ast = ast.parse(expr, mode="eval").body
+                expr_ast = ast.parse(arg_expr, mode="eval").body
             except Exception:
                 expr_ast = None
             if expr_ast is not None and not _expr_has_name(expr_ast):
                 try:
-                    pin_val = int(_eval_const(expr, vars))
+                    pin_val = int(_eval_const(arg_expr, vars))
                     body.append(LedDecl(name=name, pin=pin_val))
                     i += 1
                     continue
                 except Exception:
                     pass
-            pin_expr = _to_c_expr(expr, vars, ctx)
+            pin_expr = _to_c_expr(arg_expr, vars, ctx)
             body.append(LedDecl(name=name, pin=pin_expr))
             i += 1
             continue

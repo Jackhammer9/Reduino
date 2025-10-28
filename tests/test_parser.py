@@ -159,6 +159,21 @@ def test_parser_preserves_symbolic_expressions(src):
     assert led_nodes[0].pin == "(pin_base + offset)"
 
 
+def test_parser_allows_led_pin_from_list_index(src):
+    code = src("""
+        from Reduino.Actuators import Led
+
+        values = [1, 2, 3]
+        led = Led(pin=values[2])
+    """)
+
+    prog = parse(code)
+
+    led_nodes = [node for node in prog.setup_body if isinstance(node, LedDecl)]
+    assert len(led_nodes) == 1
+    assert led_nodes[0].pin == "__redu_list_get(values, 2)"
+
+
 def test_parser_if_elif_else_with_boolean_logic(src):
     code = src("""
         from Reduino.Actuators import Led

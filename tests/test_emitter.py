@@ -221,6 +221,21 @@ def test_emit_list_support(norm):
     assert "static_cast<int>(__redu_len(other))" in cpp
 
 
+def test_emit_led_pin_from_list_index(norm):
+    src = """
+    from Reduino.Actuators import Led
+
+    values = [1, 2, 3]
+    led = Led(pin=values[1])
+    """
+
+    cpp = norm(emit(parse(dedent(src))))
+
+    assert "__redu_make_list<int>(1, 2, 3)" in cpp
+    assert "bool __state_led = false;" in cpp
+    assert "pinMode(__redu_list_get(values, 1), OUTPUT);" in cpp
+
+
 def test_emit_function_parameter_types_from_callsite_literals(norm):
     src = """
     def add(a, b):
