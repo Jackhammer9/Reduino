@@ -731,7 +731,7 @@ def emit(ast: Program) -> str:
             "  delayMicroseconds(10);",
             f"  digitalWrite({trig_expr}, LOW);",
             f"  unsigned long __redu_duration_{name} = pulseIn({echo_expr}, HIGH);",
-            "  return (static_cast<float>(__redu_duration_{name}) * 0.0343f) / 2.0f;",
+            f"  return (static_cast<float>(__redu_duration_{name}) * 0.0343f) / 2.0f;",
             "}\n",
         ]
         ultrasonic_sections.append("\n".join(helper_lines))
