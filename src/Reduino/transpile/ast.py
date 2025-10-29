@@ -16,6 +16,7 @@ class Program:
     global_decls: List[object] = field(default_factory=list)
     helpers: Set[str] = field(default_factory=set)
     functions: List["FunctionDef"] = field(default_factory=list)
+    ultrasonic_measurements: Set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -113,6 +114,16 @@ class SerialWrite:
     name: str
     value: str
     newline: bool = True
+
+
+@dataclass
+class UltrasonicDecl:
+    """Declare an ultrasonic sensor bound to ``trig``/``echo`` pins."""
+
+    name: str
+    trig: Union[int, str]
+    echo: Union[int, str]
+    model: str = "HC-SR04"
 
 
 @dataclass

@@ -141,6 +141,32 @@ def test_emit_serial_monitor(norm):
     # ensure helper lands in setup body
     setup_section = text.split("void loop()", 1)[0]
     assert "Serial.begin(115200);" in setup_section
+
+
+def test_emit_ultrasonic_measurement(norm):
+    src = """
+    from Reduino.Sensors import Ultrasonic
+
+    sensor = Ultrasonic(12, 11)
+    distance = sensor.measure_distance()
+    """
+
+    cpp = emit(parse(src))
+    text = norm(cpp)
+
+    assert "pinMode(12, OUTPUT);" in cpp
+    assert "pinMode(11, INPUT);" in cpp
+    assert "float __redu_ultrasonic_measure_sensor()" in cpp
+    assert "distance = __redu_ultrasonic_measure_sensor();" in text
+    assert "static unsigned long __redu_last_trigger_ms_sensor = 0UL;" in cpp
+    assert "static float __redu_last_distance_sensor = 400.0f;" in cpp
+    assert "static bool __redu_has_distance_sensor = false;" in cpp
+    assert "for (unsigned int __redu_attempt_sensor = 0U;" in cpp
+    assert "delay(__redu_min_interval_ms_sensor - __redu_elapsed_ms_sensor);" in cpp
+    assert "pulseIn(11, HIGH, 30000UL);" in cpp
+    assert "__redu_has_distance_sensor = true;" in cpp
+    assert "return 400.0f;" in cpp
+    assert "delayMicroseconds(10);" in cpp
 def test_emit_includes_len_helper_and_call(norm):
     src = """
     total = len(readings)

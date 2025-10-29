@@ -30,6 +30,7 @@ from .ast import (
     SerialWrite,
     Sleep,
     TryStatement,
+    UltrasonicDecl,
     VarAssign,
     VarDecl,
     WhileLoop,
@@ -553,6 +554,19 @@ def _to_c_expr(
                         return f"__brightness_{owner_node.id}"
                 raise ValueError("unsupported attribute call")
 
+            if attr == "measure_distance":
+                if n.args or n.keywords:
+                    raise ValueError("unsupported attribute call")
+                if isinstance(owner_node, ast.Name) and ctx is not None:
+                    sensors = ctx.get("ultrasonic_names", set())
+                    if owner_node.id in sensors:
+                        measure_calls: Set[str] = ctx.setdefault(
+                            "ultrasonic_measure_calls", set()
+                        )
+                        measure_calls.add(owner_node.id)
+                        return f"__redu_ultrasonic_measure_{owner_node.id}()"
+                raise ValueError("unsupported attribute call")
+
             if attr == "read":
                 if n.args or n.keywords:
                     raise ValueError("unsupported attribute call")
@@ -816,6 +830,13 @@ def _infer_expr_type(
             if owner.id in serials:
                 return "String"
 
+        if attr == "measure_distance" and isinstance(owner, ast.Name):
+            if ctx is None:
+                return "float"
+            sensors = ctx.get("ultrasonic_names", set())
+            if owner.id in sensors:
+                return "float"
+
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
         fname = node.func.id
 
@@ -1062,10 +1083,12 @@ RE_IMPORT_LED     = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+Led\s*
 RE_IMPORT_SLEEP   = re.compile(r"^\s*from\s+Reduino\.Time\s+import\s+Sleep\s*$")
 RE_IMPORT_SERIAL  = re.compile(r"^\s*from\s+Reduino\.Utils\s+import\s+SerialMonitor\s*$")
 RE_IMPORT_TARGET  = re.compile(r"^\s*from\s+Reduino\s+import\s+target\s*$")
+RE_IMPORT_ULTRASONIC = re.compile(r"^\s*from\s+Reduino\.Sensors\s+import\s+Ultrasonic\s*$")
 
 # Led Primitives
 RE_ASSIGN     = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*(.+)$")
 RE_LED_DECL   = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Led\s*\(\s*(.*?)\s*\)\s*$")
+RE_ULTRASONIC_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Ultrasonic\s*\(\s*(.*?)\s*\)\s*$")
 RE_LED_ON         = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.on\(\s*\)\s*$")
 RE_LED_OFF        = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.off\(\s*\)\s*$")
 RE_LED_TOGGLE     = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.toggle\(\s*\)\s*$")
@@ -1382,10 +1405,18 @@ def _handle_assignment_ast(
             and n.func.id == "SerialMonitor"
         )
 
-    if isinstance(target, ast.Name) and (is_led_call(value) or is_serial_monitor_call(value)):
+    def is_ultrasonic_call(n: ast.AST) -> bool:
+        return isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "Ultrasonic"
+
+    if isinstance(target, ast.Name) and (
+        is_led_call(value) or is_serial_monitor_call(value) or is_ultrasonic_call(value)
+    ):
         return None
     if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
-        if any(is_led_call(elt) or is_serial_monitor_call(elt) for elt in value.elts):
+        if any(
+            is_led_call(elt) or is_serial_monitor_call(elt) or is_ultrasonic_call(elt)
+            for elt in value.elts
+        ):
             return None
 
     vars_env = ctx.setdefault("vars", {})
@@ -1837,6 +1868,7 @@ def _parse_simple_lines(
             or RE_IMPORT_SLEEP.match(line)
             or RE_IMPORT_SERIAL.match(line)
             or RE_IMPORT_TARGET.match(line)
+            or RE_IMPORT_ULTRASONIC.match(line)
         ):
             i += 1
             continue
@@ -2310,6 +2342,70 @@ def _parse_simple_lines(
             i += 1
             continue
 
+        m = RE_ULTRASONIC_DECL.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            trig_arg = _extract_call_argument(args_src, keyword="trig")
+            if trig_arg is None:
+                trig_arg = _extract_call_argument(args_src)
+            echo_arg = _extract_call_argument(args_src, keyword="echo")
+            if echo_arg is None:
+                echo_arg = _extract_call_argument(args_src, position=1)
+            if trig_arg is None or not trig_arg.strip():
+                raise ValueError("Ultrasonic sensors require a trig pin")
+            if echo_arg is None or not echo_arg.strip():
+                raise ValueError("Ultrasonic sensors require an echo pin")
+
+            def _resolve_pin(src_text: str) -> Union[int, str]:
+                text = src_text.strip()
+                try:
+                    expr_ast = ast.parse(text, mode="eval").body
+                except Exception:
+                    expr_ast = None
+                if expr_ast is not None and not _expr_has_name(expr_ast):
+                    try:
+                        value = _eval_const(text, vars)
+                    except Exception:
+                        pass
+                    else:
+                        if isinstance(value, bool):
+                            return 1 if value else 0
+                        if isinstance(value, (int, float)):
+                            return int(value)
+                return _to_c_expr(text, vars, ctx)
+
+            trig_value = _resolve_pin(trig_arg)
+            echo_value = _resolve_pin(echo_arg)
+
+            model_arg = _extract_call_argument(args_src, keyword="sensor")
+            if model_arg is None:
+                model_arg = _extract_call_argument(args_src, keyword="model")
+            model = "HC-SR04"
+            if model_arg is not None and model_arg.strip():
+                try:
+                    resolved = _eval_const(model_arg, vars)
+                except Exception:
+                    try:
+                        resolved = ast.literal_eval(model_arg)
+                    except Exception as exc:  # pragma: no cover - defensive
+                        raise ValueError("Ultrasonic sensor type must be a literal string") from exc
+                if isinstance(resolved, _ExprStr):
+                    raise ValueError("Ultrasonic sensor type must be a literal string")
+                if not isinstance(resolved, str):
+                    raise ValueError("Ultrasonic sensor type must be a string literal")
+                canonical = resolved.strip().upper().replace("_", "-")
+                if canonical != "HC-SR04":
+                    raise ValueError(f"Unsupported ultrasonic sensor '{resolved}'")
+                model = "HC-SR04"
+
+            vars[name] = _ExprStr(name)
+            ctx.setdefault("ultrasonic_names", set()).add(name)
+            ctx.setdefault("ultrasonic_models", {})[name] = model
+            ctx.setdefault("ultrasonic_measure_calls", set())
+            body.append(UltrasonicDecl(name=name, trig=trig_value, echo=echo_value, model=model))
+            i += 1
+            continue
+
         m = RE_SERIAL_DECL.match(line)
         if m:
             name, expr = m.group(1), m.group(2)
@@ -2586,6 +2682,9 @@ def parse(src: str) -> Program:
         "function_signature_aliases": {},
         "function_call_signatures": {},
         "function_primary_signature": {},
+        "ultrasonic_measure_calls": set(),
+        "ultrasonic_names": set(),
+        "ultrasonic_models": {},
     }
     ctx["vars"]["_helpers"] = ctx["helpers"]
 
@@ -2614,6 +2713,7 @@ def parse(src: str) -> Program:
             or RE_IMPORT_SLEEP.match(text)
             or RE_IMPORT_SERIAL.match(text)
             or RE_IMPORT_TARGET.match(text)
+            or RE_IMPORT_ULTRASONIC.match(text)
         ):
             i += 1; continue
 
@@ -2745,4 +2845,5 @@ def parse(src: str) -> Program:
         global_decls=ctx.get("globals", []),
         helpers=set(ctx.get("helpers", set())),
         functions=selected_functions,
+        ultrasonic_measurements=set(ctx.get("ultrasonic_measure_calls", set())),
     )

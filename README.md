@@ -51,6 +51,7 @@
 * [API reference](#api-reference)
 
   * [`Reduino.Actuators.Led`](#reduinoactuatorsled)
+  * [`Reduino.Sensors.Ultrasonic`](#reduinosensorsultrasonic)
   * [`Reduino.Time.Sleep`](#reduinotimesleep)
   * [`Reduino.target`](#reduinotarget)
   * [`Reduino.Utils`](#reduinoutils)
@@ -107,6 +108,27 @@ from Reduino.Actuators import Led
 led = Led(5)
 led.set_brightness(128)
 led.blink(250, times=3)
+```
+
+### `Reduino.Sensors.Ultrasonic`
+
+| Member                                                      | Description |
+| ----------------------------------------------------------- | ----------- |
+| `Ultrasonic(trig, echo, sensor="HC-SR04", *, distance_provider=None, default_distance=0.0)` | Factory returning an ultrasonic sensor helper. Only the `HC-SR04` model is supported today; the selector is reserved for future expansion. |
+| `UltrasonicSensor.measure_distance()`                        | Return the simulated distance reading (centimetres). Uses the optional provider when supplied, otherwise falls back to `default_distance`. |
+
+The generated HC-SR04 helpers throttle trigger pulses to the recommended 60 ms interval, retry short reads, and reuse the most recent valid distance (or 400 cm when none exist yet) whenever the sensor reports a timeout. This prevents spurious zero-centimetre results that can occur when the module is polled too quickly.
+
+> [!NOTE]
+> HC-SR04 helpers wait at least 60 ms between trigger pulses, retry up to three reads when `pulseIn()` reports zero microseconds, and only reuse a cached value after a successful measurement. When no reading has ever succeeded they fall back to the sensor's approximate maximum range (400 cm).
+
+**Example**
+
+```python
+from Reduino.Sensors import Ultrasonic
+
+sensor = Ultrasonic(trig=7, echo=6)
+reading = sensor.measure_distance()
 ```
 
 ### `Reduino.Time.Sleep`
@@ -203,6 +225,7 @@ without calling `connect` until the dependency is available.
 **Device primitives**
 
 * LED pin init creates `pinMode`; actions become `digitalWrite`/PWM; sleeps become `delay(ms)`.
+* Ultrasonic `HC-SR04` sensors configure trig/echo pins and emit helper functions for `measure_distance()`.
 
 **Target directive**
 
