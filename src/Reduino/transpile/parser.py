@@ -544,6 +544,15 @@ def _to_c_expr(
                         return f"__state_{owner_node.id}"
                 raise ValueError("unsupported attribute call")
 
+            if attr == "get_brightness":
+                if n.args or n.keywords:
+                    raise ValueError("unsupported attribute call")
+                if isinstance(owner_node, ast.Name) and ctx is not None:
+                    led_names = ctx.get("led_names", set())
+                    if owner_node.id in led_names:
+                        return f"__brightness_{owner_node.id}"
+                raise ValueError("unsupported attribute call")
+
             if attr == "read":
                 if n.args or n.keywords:
                     raise ValueError("unsupported attribute call")
@@ -792,6 +801,14 @@ def _infer_expr_type(
             led_names = ctx.get("led_names", set())
             if owner.id in led_names:
                 return "bool"
+            
+        if attr == "get_brightness" and isinstance(owner, ast.Name):
+            if ctx is None:
+                return "int"
+            led_names = ctx.get("led_names", set())
+            if owner.id in led_names:
+                return "int"
+            
         if attr == "read" and isinstance(owner, ast.Name):
             if ctx is None:
                 return "String"

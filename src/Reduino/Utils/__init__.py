@@ -16,7 +16,6 @@ class SerialMonitor:
     def __init__(
         self,
         baud_rate: int = 9600,
-        *,
         port: Optional[str] = None,
         timeout: float = 1.0,
         newline: str = "\n",
