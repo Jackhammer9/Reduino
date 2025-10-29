@@ -83,11 +83,17 @@ __redu_list<T> __redu_make_list(First first, Rest... rest) {
 
 template <typename T>
 T &__redu_list_get(__redu_list<T> &list, int index) {
+if (index < 0) {
+    index += static_cast<int>(list.size);
+  }
   return list.data[index];
 }
 
 template <typename T>
 const T &__redu_list_get(const __redu_list<T> &list, int index) {
+if (index < 0) {
+    index += static_cast<int>(list.size);
+  }
   return list.data[index];
 }
 
