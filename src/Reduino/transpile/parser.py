@@ -950,7 +950,12 @@ def _extract_call_argument(
                 selected = kw.value
                 break
 
-    if selected is None and position is not None and len(call_expr.args) > position:
+    if (
+        selected is None
+        and keyword is None
+        and position is not None
+        and len(call_expr.args) > position
+    ):
         selected = call_expr.args[position]
 
     if selected is None:
