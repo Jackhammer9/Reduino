@@ -730,8 +730,17 @@ def emit(ast: Program) -> str:
             f"  digitalWrite({trig_expr}, HIGH);",
             "  delayMicroseconds(10);",
             f"  digitalWrite({trig_expr}, LOW);",
+            f"  static float __redu_last_distance_{name} = -1.0f;",
             f"  unsigned long __redu_duration_{name} = pulseIn({echo_expr}, HIGH);",
-            f"  return (static_cast<float>(__redu_duration_{name}) * 0.0343f) / 2.0f;",
+            f"  if (__redu_duration_{name} == 0UL) {{",
+            f"    if (__redu_last_distance_{name} >= 0.0f) {{",
+            f"      return __redu_last_distance_{name};",
+            "    }",
+            "    return 1000000.0f;",
+            "  }",
+            f"  float __redu_distance_{name} = (static_cast<float>(__redu_duration_{name}) * 0.0343f) / 2.0f;",
+            f"  __redu_last_distance_{name} = __redu_distance_{name};",
+            f"  return __redu_distance_{name};",
             "}\n",
         ]
         ultrasonic_sections.append("\n".join(helper_lines))

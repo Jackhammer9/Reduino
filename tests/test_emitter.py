@@ -159,7 +159,9 @@ def test_emit_ultrasonic_measurement(norm):
     assert "float __redu_ultrasonic_measure_sensor()" in cpp
     assert "distance = __redu_ultrasonic_measure_sensor();" in text
     assert "pulseIn(11, HIGH);" in cpp
-    assert "return (static_cast<float>(__redu_duration_sensor) * 0.0343f) / 2.0f;" in cpp
+    assert "static float __redu_last_distance_sensor = -1.0f;" in cpp
+    assert "if (__redu_duration_sensor == 0UL) {" in cpp
+    assert "__redu_last_distance_sensor = __redu_distance_sensor;" in cpp
     assert "delayMicroseconds(10);" in cpp
 def test_emit_includes_len_helper_and_call(norm):
     src = """
