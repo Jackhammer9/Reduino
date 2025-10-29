@@ -53,6 +53,8 @@
   * [`Reduino.Actuators.Led`](#reduinoactuatorsled)
   * [`Reduino.Time.Sleep`](#reduinotimesleep)
   * [`Reduino.target`](#reduinotarget)
+  * [`Reduino.Utils`](#reduinoutils)
+  * [`Reduino.Utils.SerialMonitor`](#reduinoutilsserialmonitor)
 * [Supported devices & primitives](#supported-devices--primitives)
 * [Supported Python features](#supported-python-features)
 * [Testing](#testing)
@@ -133,6 +135,45 @@ from Reduino import target
 cpp = target("/dev/ttyACM0", upload=False)
 print(cpp)
 ```
+
+### `Reduino.Utils`
+
+`Reduino.Utils` collects helper utilities that complement the core transpiler
+APIs. They are designed to be imported piecemeal:
+
+```python
+from Reduino.Utils import SerialMonitor
+```
+
+### `Reduino.Utils.SerialMonitor`
+
+| Member                                                   | Description                                                                 |
+| -------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `SerialMonitor(baud_rate=9600, port=None, timeout=1.0)`   | Configure an Arduino-style serial console. Optionally auto-connect to `port`. |
+| `connect(port)`                                          | Open a host-side serial connection using the configured baud rate.          |
+| `close()`                                                | Tear down the active serial connection if one exists.                       |
+| `write(value)`                                           | Send text to the MCU. Returns the string sent (without newline).            |
+| `read()`                                                 | Read the next message from the MCU and echo it to stdout. Returns the text. |
+
+**Usage pattern**
+
+```python
+from Reduino import target
+from Reduino.Utils import SerialMonitor
+
+monitor = SerialMonitor(baud_rate=115200)
+monitor.connect("/dev/ttyACM0")  # requires the optional 'pyserial' dependency
+
+cpp = target("/dev/ttyACM0", upload=True)
+print("Generated C++:\n", cpp)
+
+monitor.write("hello from host")
+message = monitor.read()
+```
+
+Call `monitor.close()` when you no longer need the serial session. When
+running on a system without `pyserial` installed, instantiate the monitor
+without calling `connect` until the dependency is available.
 
 
 ## Supported Python features
