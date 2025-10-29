@@ -44,7 +44,7 @@ actuators or sensors to the transpiler.
   src/Reduino/
     transpile/      # Parser, AST, and emitter
     toolchain/      # PlatformIO helpers
-    Actuators.py    # Runtime helpers mirroring generated code
+    Actuators/      # Runtime helpers mirroring generated code
     Time.py         # Timing helpers for tests/examples
   ```
 - Prefer descriptive naming (`LedDecl`, `Sleep`, `VarAssign`) and keep parser/emitter logic
