@@ -14,6 +14,7 @@ from Reduino.transpile.ast import (
     SerialWrite,
     Sleep,
     TryStatement,
+    UltrasonicDecl,
     VarAssign,
     VarDecl,
     WhileLoop,
@@ -762,3 +763,43 @@ def test_parser_supports_void_function_returns(src):
 
     globals_out = {decl.name: decl for decl in prog.global_decls}
     assert globals_out["counter"].expr == "3"
+
+
+def test_parser_ultrasonic_declaration_and_measurement(src):
+    code = src(
+        """
+        from Reduino.Sensors import Ultrasonic
+
+        sensor = Ultrasonic(9, 10)
+        distance = sensor.measure_distance()
+        """
+    )
+
+    prog = parse(code)
+    decls = [node for node in prog.setup_body if isinstance(node, UltrasonicDecl)]
+    assert len(decls) == 1
+    decl = decls[0]
+    assert decl.trig == 9
+    assert decl.echo == 10
+    assert prog.ultrasonic_measurements == {"sensor"}
+
+    globals_out = {decl.name: decl for decl in prog.global_decls}
+    assert globals_out["distance"].c_type == "float"
+
+    assign = next(
+        node for node in prog.setup_body if isinstance(node, VarAssign) and node.name == "distance"
+    )
+    assert assign.expr == "__redu_ultrasonic_measure_sensor()"
+
+
+def test_parser_ultrasonic_requires_pins(src):
+    code = src(
+        """
+        from Reduino.Sensors import Ultrasonic
+
+        sensor = Ultrasonic(trig=5)
+        """
+    )
+
+    with pytest.raises(ValueError):
+        parse(code)

@@ -24,6 +24,7 @@ from .ast import (
     SerialMonitorDecl,
     SerialWrite,
     Sleep,
+    UltrasonicDecl,
     TryStatement,
     VarAssign,
     VarDecl,
@@ -205,10 +206,12 @@ def _emit_block(
     led_pin: Dict[str, Union[int, str]],
     led_state: Dict[str, str],
     led_brightness: Dict[str, str],
+    ultrasonic_decls: Dict[str, UltrasonicDecl],
     indent: str = "  ",
     *,
     in_setup: bool = False,
     emitted_pin_modes: Optional[Set[Tuple[str, str]]] = None,
+    ultrasonic_pin_modes: Optional[Set[Tuple[str, str, str]]] = None,
 ) -> List[str]:
     """Emit a block of statements as C++ source lines."""
     lines: List[str] = []
@@ -223,9 +226,11 @@ def _emit_block(
                     led_pin,
                     led_state,
                     led_brightness,
+                    ultrasonic_decls,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
+                    ultrasonic_pin_modes=ultrasonic_pin_modes,
                 )
             )
             lines.append(f"{indent}}}")
@@ -241,9 +246,11 @@ def _emit_block(
                         led_pin,
                         led_state,
                         led_brightness,
+                        ultrasonic_decls,
                         indent + "  ",
                         in_setup=in_setup,
                         emitted_pin_modes=emitted_pin_modes,
+                        ultrasonic_pin_modes=ultrasonic_pin_modes,
                     )
                 )
                 lines.append(f"{indent}}}")
@@ -255,9 +262,11 @@ def _emit_block(
                         led_pin,
                         led_state,
                         led_brightness,
+                        ultrasonic_decls,
                         indent + "  ",
                         in_setup=in_setup,
                         emitted_pin_modes=emitted_pin_modes,
+                        ultrasonic_pin_modes=ultrasonic_pin_modes,
                     )
                 )
                 lines.append(f"{indent}}}")
@@ -271,9 +280,11 @@ def _emit_block(
                     led_pin,
                     led_state,
                     led_brightness,
+                    ultrasonic_decls,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
+                    ultrasonic_pin_modes=ultrasonic_pin_modes,
                 )
             )
             lines.append(f"{indent}}}")
@@ -289,9 +300,11 @@ def _emit_block(
                     led_pin,
                     led_state,
                     led_brightness,
+                    ultrasonic_decls,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
+                    ultrasonic_pin_modes=ultrasonic_pin_modes,
                 )
             )
             lines.append(f"{indent}}}")
@@ -305,9 +318,11 @@ def _emit_block(
                     led_pin,
                     led_state,
                     led_brightness,
+                    ultrasonic_decls,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
+                    ultrasonic_pin_modes=ultrasonic_pin_modes,
                 )
             )
             lines.append(f"{indent}}}")
@@ -328,9 +343,11 @@ def _emit_block(
                         led_pin,
                         led_state,
                         led_brightness,
+                        ultrasonic_decls,
                         indent + "  ",
                         in_setup=in_setup,
                         emitted_pin_modes=emitted_pin_modes,
+                        ultrasonic_pin_modes=ultrasonic_pin_modes,
                     )
                 )
                 lines.append(f"{indent}}}")
@@ -388,6 +405,23 @@ def _emit_block(
                 if key not in emitted_pin_modes:
                     emitted_pin_modes.add(key)
                     lines.append(f"{indent}pinMode({pin_expr}, OUTPUT);")
+            continue
+
+        if isinstance(node, UltrasonicDecl):
+            ultrasonic_decls[node.name] = node
+            if in_setup:
+                if ultrasonic_pin_modes is None:
+                    ultrasonic_pin_modes = set()
+                trig_expr = _emit_expr(node.trig)
+                echo_expr = _emit_expr(node.echo)
+                trig_key = (node.name, trig_expr, "OUTPUT")
+                if trig_key not in ultrasonic_pin_modes:
+                    ultrasonic_pin_modes.add(trig_key)
+                    lines.append(f"{indent}pinMode({trig_expr}, OUTPUT);")
+                echo_key = (node.name, echo_expr, "INPUT")
+                if echo_key not in ultrasonic_pin_modes:
+                    ultrasonic_pin_modes.add(echo_key)
+                    lines.append(f"{indent}pinMode({echo_expr}, INPUT);")
             continue
 
         if isinstance(node, LedOn):
@@ -543,10 +577,15 @@ def emit(ast: Program) -> str:
     led_state: Dict[str, str] = {}
     led_brightness: Dict[str, str] = {}
     helpers = getattr(ast, "helpers", set())
+    ultrasonic_measurements = getattr(ast, "ultrasonic_measurements", set())
 
     globals_: List[str] = []
     setup_lines: List[str] = []
     loop_lines: List[str] = []
+
+    ultrasonic_decls: Dict[str, UltrasonicDecl] = {}
+    ultrasonic_pin_modes: Set[Tuple[str, str, str]] = set()
+    loop_ultrasonic_modes: Set[Tuple[str, str, str]] = set()
 
     for decl in getattr(ast, "global_decls", []):
         line = f"{decl.c_type} {decl.name} = {decl.expr};"
@@ -576,6 +615,8 @@ def emit(ast: Program) -> str:
             if bright_line not in globals_:
                 globals_.append(bright_line)
             led_pin[node.name] = node.pin
+        if isinstance(node, UltrasonicDecl):
+            ultrasonic_decls[node.name] = node
 
     for node in (loop_body or []):
         if isinstance(node, LedDecl):
@@ -595,6 +636,19 @@ def emit(ast: Program) -> str:
                 led_pin[node.name] = node.pin
             # Ensure pinMode exists in setup for pins declared in loop
             setup_lines.append(f"  pinMode({_emit_expr(node.pin)}, OUTPUT);")
+        if isinstance(node, UltrasonicDecl):
+            if node.name not in ultrasonic_decls:
+                ultrasonic_decls[node.name] = node
+            trig_expr = _emit_expr(node.trig)
+            echo_expr = _emit_expr(node.echo)
+            trig_key = (node.name, trig_expr, "OUTPUT")
+            echo_key = (node.name, echo_expr, "INPUT")
+            if trig_key not in loop_ultrasonic_modes:
+                loop_ultrasonic_modes.add(trig_key)
+                setup_lines.append(f"  pinMode({trig_expr}, OUTPUT);")
+            if echo_key not in loop_ultrasonic_modes:
+                loop_ultrasonic_modes.add(echo_key)
+                setup_lines.append(f"  pinMode({echo_expr}, INPUT);")
 
     # Pass 2: emit statements
     setup_lines.extend(
@@ -603,8 +657,10 @@ def emit(ast: Program) -> str:
             led_pin,
             led_state,
             led_brightness,
+            ultrasonic_decls,
             in_setup=True,
             emitted_pin_modes=pin_mode_emitted,
+            ultrasonic_pin_modes=ultrasonic_pin_modes,
         )
     )
 
@@ -618,8 +674,10 @@ def emit(ast: Program) -> str:
                     led_pin,
                     led_state,
                     led_brightness,
+                    ultrasonic_decls,
                     in_setup=False,
                     emitted_pin_modes=pin_mode_emitted,
+                    ultrasonic_pin_modes=ultrasonic_pin_modes,
                 )
             )
 
@@ -630,8 +688,10 @@ def emit(ast: Program) -> str:
             led_pin,
             led_state,
             led_brightness,
+            ultrasonic_decls,
             in_setup=False,
             emitted_pin_modes=pin_mode_emitted,
+            ultrasonic_pin_modes=ultrasonic_pin_modes,
         )
     )
 
@@ -644,15 +704,37 @@ def emit(ast: Program) -> str:
             dict(led_pin),
             dict(led_state),
             dict(led_brightness),
+            ultrasonic_decls,
             indent="  ",
             in_setup=False,
             emitted_pin_modes=set(),
+            ultrasonic_pin_modes=set(),
         )
         function_sections.append(header)
         if body_lines:
             function_sections.append("\n".join(body_lines))
             function_sections.append("\n")
         function_sections.append("}\n\n")
+
+    ultrasonic_sections: List[str] = []
+    for name in sorted(ultrasonic_measurements):
+        decl = ultrasonic_decls.get(name)
+        if decl is None:
+            continue
+        trig_expr = _emit_expr(decl.trig)
+        echo_expr = _emit_expr(decl.echo)
+        helper_lines = [
+            f"float __redu_ultrasonic_measure_{name}() {{",
+            f"  digitalWrite({trig_expr}, LOW);",
+            "  delayMicroseconds(2);",
+            f"  digitalWrite({trig_expr}, HIGH);",
+            "  delayMicroseconds(10);",
+            f"  digitalWrite({trig_expr}, LOW);",
+            f"  unsigned long __redu_duration_{name} = pulseIn({echo_expr}, HIGH);",
+            "  return (static_cast<float>(__redu_duration_{name}) * 0.0343f) / 2.0f;",
+            "}\n",
+        ]
+        ultrasonic_sections.append("\n".join(helper_lines))
 
     # Stitch sections
     parts: List[str] = [HEADER]
@@ -664,6 +746,8 @@ def emit(ast: Program) -> str:
         parts.append("\n".join(globals_) + "\n\n")
     if function_sections:
         parts.append("".join(function_sections))
+    if ultrasonic_sections:
+        parts.append("".join(ultrasonic_sections))
 
     parts.append(SETUP_START)
     parts.append("\n".join(setup_lines) if setup_lines else "  // no setup actions")
