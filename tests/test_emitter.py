@@ -57,6 +57,63 @@ def test_emit_led_actions_affect_output(norm):
     assert "bool __state_led = false;" in text
 
 
+def test_emit_rgb_led_updates_and_globals(norm):
+    src = """
+    from Reduino.Actuators import RGBLed
+
+    rgb = RGBLed(3, 4, 5)
+    rgb.set_color(10, 20, 30)
+    """
+
+    cpp = emit(parse(src))
+    text = norm(cpp)
+    assert "pinMode(3, OUTPUT);" in cpp
+    assert "pinMode(4, OUTPUT);" in cpp
+    assert "pinMode(5, OUTPUT);" in cpp
+    assert "bool __rgb_state_rgb = false;" in text
+    assert "int __rgb_red_rgb = 0;" in text
+    assert "analogWrite(3, __rgb_red_rgb);" in cpp
+    assert "analogWrite(4, __rgb_green_rgb);" in cpp
+    assert "analogWrite(5, __rgb_blue_rgb);" in cpp
+
+
+def test_emit_rgb_led_inline_comment_is_ignored(norm):
+    src = """
+    from Reduino.Actuators import RGBLed
+
+    led = RGBLed(3, 4, 5)
+    led.on(255, 0, 0)  # turn the LED red
+    """
+
+    cpp = emit(parse(src))
+
+    assert "analogWrite(3, __rgb_red_led);" in cpp
+    assert "analogWrite(4, __rgb_green_led);" in cpp
+    assert "analogWrite(5, __rgb_blue_led);" in cpp
+
+
+def test_emit_rgb_led_fade_and_blink(norm):
+    src = """
+    from Reduino.Actuators import RGBLed
+
+    rgb = RGBLed(6, 7, 8)
+    rgb.fade(255, 0, 0, duration_ms=600, steps=3)
+    rgb.blink(0, 0, 255, times=2, delay_ms=125)
+    """
+
+    cpp = emit(parse(src))
+    text = norm(cpp)
+    assert "pinMode(6, OUTPUT);" in cpp
+    assert "for (int __redu_i = 1; __redu_i <= __redu_steps; ++__redu_i) {" in cpp
+    assert "delay(__redu_delay_ms);" in cpp
+    assert "analogWrite(6, __rgb_red_rgb);" in cpp
+    assert "analogWrite(8, __rgb_blue_rgb);" in cpp
+    assert "for (int __redu_i = 0; __redu_i < __redu_times; ++__redu_i) {" in cpp
+    assert "unsigned long __redu_delay_ms = 0UL;" in cpp
+    assert "delay(__redu_delay_ms);" in cpp
+    assert "bool __rgb_state_rgb = false;" in text
+
+
 def test_emit_if_elif_else_and_boolean_ops(norm):
     src = """
     from Reduino.Actuators import Led

@@ -19,6 +19,12 @@ from .ast import (
     LedOn,
     LedSetBrightness,
     LedToggle,
+    RGBLedBlink,
+    RGBLedDecl,
+    RGBLedFade,
+    RGBLedOff,
+    RGBLedOn,
+    RGBLedSetColor,
     Program,
     ReturnStmt,
     SerialMonitorDecl,
@@ -206,11 +212,14 @@ def _emit_block(
     led_pin: Dict[str, Union[int, str]],
     led_state: Dict[str, str],
     led_brightness: Dict[str, str],
+    rgb_led_pins: Dict[str, Tuple[Union[int, str], Union[int, str], Union[int, str]]],
+    rgb_led_state: Dict[str, str],
+    rgb_led_colors: Dict[str, Tuple[str, str, str]],
     ultrasonic_decls: Dict[str, UltrasonicDecl],
     indent: str = "  ",
     *,
     in_setup: bool = False,
-    emitted_pin_modes: Optional[Set[Tuple[str, str]]] = None,
+    emitted_pin_modes: Optional[Set[Tuple[str, ...]]] = None,
     ultrasonic_pin_modes: Optional[Set[Tuple[str, str, str]]] = None,
 ) -> List[str]:
     """Emit a block of statements as C++ source lines."""
@@ -226,6 +235,9 @@ def _emit_block(
                     led_pin,
                     led_state,
                     led_brightness,
+                    rgb_led_pins,
+                    rgb_led_state,
+                    rgb_led_colors,
                     ultrasonic_decls,
                     indent + "  ",
                     in_setup=in_setup,
@@ -246,6 +258,9 @@ def _emit_block(
                         led_pin,
                         led_state,
                         led_brightness,
+                        rgb_led_pins,
+                        rgb_led_state,
+                        rgb_led_colors,
                         ultrasonic_decls,
                         indent + "  ",
                         in_setup=in_setup,
@@ -262,6 +277,9 @@ def _emit_block(
                         led_pin,
                         led_state,
                         led_brightness,
+                        rgb_led_pins,
+                        rgb_led_state,
+                        rgb_led_colors,
                         ultrasonic_decls,
                         indent + "  ",
                         in_setup=in_setup,
@@ -280,6 +298,9 @@ def _emit_block(
                     led_pin,
                     led_state,
                     led_brightness,
+                    rgb_led_pins,
+                    rgb_led_state,
+                    rgb_led_colors,
                     ultrasonic_decls,
                     indent + "  ",
                     in_setup=in_setup,
@@ -300,6 +321,9 @@ def _emit_block(
                     led_pin,
                     led_state,
                     led_brightness,
+                    rgb_led_pins,
+                    rgb_led_state,
+                    rgb_led_colors,
                     ultrasonic_decls,
                     indent + "  ",
                     in_setup=in_setup,
@@ -318,6 +342,9 @@ def _emit_block(
                     led_pin,
                     led_state,
                     led_brightness,
+                    rgb_led_pins,
+                    rgb_led_state,
+                    rgb_led_colors,
                     ultrasonic_decls,
                     indent + "  ",
                     in_setup=in_setup,
@@ -343,6 +370,9 @@ def _emit_block(
                         led_pin,
                         led_state,
                         led_brightness,
+                        rgb_led_pins,
+                        rgb_led_state,
+                        rgb_led_colors,
                         ultrasonic_decls,
                         indent + "  ",
                         in_setup=in_setup,
@@ -393,6 +423,48 @@ def _emit_block(
             brightness_var = led_brightness.setdefault(name, f"__brightness_{name}")
             return _emit_expr(pin), state_var, brightness_var
 
+        def _ensure_rgb_tracking(name: str) -> Tuple[Tuple[str, str, str], Tuple[str, str, str], str]:
+            pins = rgb_led_pins.get(name)
+            if pins is None:
+                pins = (0, 0, 0)
+            pin_codes = tuple(_emit_expr(pin) for pin in pins)
+            state_var = rgb_led_state.setdefault(name, f"__rgb_state_{name}")
+            color_vars = rgb_led_colors.setdefault(
+                name,
+                (
+                    f"__rgb_red_{name}",
+                    f"__rgb_green_{name}",
+                    f"__rgb_blue_{name}",
+                ),
+            )
+            return pin_codes, color_vars, state_var
+
+        def _emit_rgb_update(name: str, red_expr: str, green_expr: str, blue_expr: str) -> List[str]:
+            pin_codes, color_vars, state_var = _ensure_rgb_tracking(name)
+            red_pin, green_pin, blue_pin = pin_codes
+            red_var, green_var, blue_var = color_vars
+            block_lines = [f"{indent}{{"]
+            block_lines.append(f"{indent}  int __redu_red = {red_expr};")
+            block_lines.append(f"{indent}  if (__redu_red < 0) {{ __redu_red = 0; }}")
+            block_lines.append(f"{indent}  if (__redu_red > 255) {{ __redu_red = 255; }}")
+            block_lines.append(f"{indent}  int __redu_green = {green_expr};")
+            block_lines.append(f"{indent}  if (__redu_green < 0) {{ __redu_green = 0; }}")
+            block_lines.append(f"{indent}  if (__redu_green > 255) {{ __redu_green = 255; }}")
+            block_lines.append(f"{indent}  int __redu_blue = {blue_expr};")
+            block_lines.append(f"{indent}  if (__redu_blue < 0) {{ __redu_blue = 0; }}")
+            block_lines.append(f"{indent}  if (__redu_blue > 255) {{ __redu_blue = 255; }}")
+            block_lines.append(f"{indent}  {red_var} = __redu_red;")
+            block_lines.append(f"{indent}  {green_var} = __redu_green;")
+            block_lines.append(f"{indent}  {blue_var} = __redu_blue;")
+            block_lines.append(
+                f"{indent}  {state_var} = (({red_var} > 0) || ({green_var} > 0) || ({blue_var} > 0));"
+            )
+            block_lines.append(f"{indent}  analogWrite({red_pin}, {red_var});")
+            block_lines.append(f"{indent}  analogWrite({green_pin}, {green_var});")
+            block_lines.append(f"{indent}  analogWrite({blue_pin}, {blue_var});")
+            block_lines.append(f"{indent}}}")
+            return block_lines
+
         if isinstance(node, LedDecl):
             led_pin[node.name] = node.pin
             led_state[node.name] = f"__state_{node.name}"
@@ -405,6 +477,28 @@ def _emit_block(
                 if key not in emitted_pin_modes:
                     emitted_pin_modes.add(key)
                     lines.append(f"{indent}pinMode({pin_expr}, OUTPUT);")
+            continue
+
+        if isinstance(node, RGBLedDecl):
+            rgb_led_pins[node.name] = (node.red_pin, node.green_pin, node.blue_pin)
+            rgb_led_state.setdefault(node.name, f"__rgb_state_{node.name}")
+            rgb_led_colors.setdefault(
+                node.name,
+                (
+                    f"__rgb_red_{node.name}",
+                    f"__rgb_green_{node.name}",
+                    f"__rgb_blue_{node.name}",
+                ),
+            )
+            if in_setup:
+                if emitted_pin_modes is None:
+                    emitted_pin_modes = set()
+                for idx, pin in enumerate((node.red_pin, node.green_pin, node.blue_pin)):
+                    pin_expr = _emit_expr(pin)
+                    key = (node.name, pin_expr, str(idx))
+                    if key not in emitted_pin_modes:
+                        emitted_pin_modes.add(key)
+                        lines.append(f"{indent}pinMode({pin_expr}, OUTPUT);")
             continue
 
         if isinstance(node, UltrasonicDecl):
@@ -447,6 +541,39 @@ def _emit_block(
             )
             continue
 
+        if isinstance(node, RGBLedSetColor):
+            lines.extend(
+                _emit_rgb_update(
+                    node.name,
+                    _emit_expr(node.red),
+                    _emit_expr(node.green),
+                    _emit_expr(node.blue),
+                )
+            )
+            continue
+
+        if isinstance(node, RGBLedOn):
+            lines.extend(
+                _emit_rgb_update(
+                    node.name,
+                    _emit_expr(node.red),
+                    _emit_expr(node.green),
+                    _emit_expr(node.blue),
+                )
+            )
+            continue
+
+        if isinstance(node, RGBLedOff):
+            lines.extend(
+                _emit_rgb_update(
+                    node.name,
+                    "0",
+                    "0",
+                    "0",
+                )
+            )
+            continue
+
         if isinstance(node, LedSetBrightness):
             pin_code, state_var, brightness_var = _ensure_led_tracking(node.name)
             value_expr = _emit_expr(node.value)
@@ -480,6 +607,153 @@ def _emit_block(
             lines.append(f"{indent}  {state_var} = false;")
             lines.append(f"{indent}  {brightness_var} = 0;")
             lines.append(f"{indent}  digitalWrite({pin_code}, LOW);")
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, RGBLedFade):
+            pin_codes, color_vars, state_var = _ensure_rgb_tracking(node.name)
+            red_pin, green_pin, blue_pin = pin_codes
+            red_var, green_var, blue_var = color_vars
+            target_red = _emit_expr(node.red)
+            target_green = _emit_expr(node.green)
+            target_blue = _emit_expr(node.blue)
+            duration_expr = _emit_expr(node.duration_ms)
+            steps_expr = _emit_expr(node.steps)
+            lines.append(f"{indent}{{")
+            lines.append(f"{indent}  long __redu_duration = {duration_expr};")
+            lines.append(f"{indent}  if (__redu_duration < 0L) {{ __redu_duration = 0L; }}")
+            lines.append(f"{indent}  int __redu_steps = {steps_expr};")
+            lines.append(f"{indent}  if (__redu_steps <= 0) {{ __redu_steps = 1; }}")
+            lines.append(f"{indent}  int __redu_start_red = {red_var};")
+            lines.append(f"{indent}  int __redu_start_green = {green_var};")
+            lines.append(f"{indent}  int __redu_start_blue = {blue_var};")
+            lines.append(f"{indent}  int __redu_target_red = {target_red};")
+            lines.append(f"{indent}  if (__redu_target_red < 0) {{ __redu_target_red = 0; }}")
+            lines.append(f"{indent}  if (__redu_target_red > 255) {{ __redu_target_red = 255; }}")
+            lines.append(f"{indent}  int __redu_target_green = {target_green};")
+            lines.append(f"{indent}  if (__redu_target_green < 0) {{ __redu_target_green = 0; }}")
+            lines.append(f"{indent}  if (__redu_target_green > 255) {{ __redu_target_green = 255; }}")
+            lines.append(f"{indent}  int __redu_target_blue = {target_blue};")
+            lines.append(f"{indent}  if (__redu_target_blue < 0) {{ __redu_target_blue = 0; }}")
+            lines.append(f"{indent}  if (__redu_target_blue > 255) {{ __redu_target_blue = 255; }}")
+            lines.append(
+                f"{indent}  bool __redu_same = (({red_var} == __redu_target_red) && ({green_var} == __redu_target_green) && ({blue_var} == __redu_target_blue));"
+            )
+            lines.append(f"{indent}  if ((__redu_duration == 0L) || __redu_same) {{")
+            lines.append(f"{indent}    {red_var} = __redu_target_red;")
+            lines.append(f"{indent}    {green_var} = __redu_target_green;")
+            lines.append(f"{indent}    {blue_var} = __redu_target_blue;")
+            lines.append(
+                f"{indent}    {state_var} = (({red_var} > 0) || ({green_var} > 0) || ({blue_var} > 0));"
+            )
+            lines.append(f"{indent}    analogWrite({red_pin}, {red_var});")
+            lines.append(f"{indent}    analogWrite({green_pin}, {green_var});")
+            lines.append(f"{indent}    analogWrite({blue_pin}, {blue_var});")
+            lines.append(f"{indent}  }} else {{")
+            lines.append(
+                f"{indent}    float __redu_step_delay = static_cast<float>(__redu_duration) / static_cast<float>(__redu_steps);"
+            )
+            lines.append(
+                f"{indent}    unsigned long __redu_delay_ms = (__redu_step_delay <= 0.0f) ? 0UL : static_cast<unsigned long>(__redu_step_delay + 0.5f);"
+            )
+            lines.append(f"{indent}    for (int __redu_i = 1; __redu_i <= __redu_steps; ++__redu_i) {{")
+            lines.append(
+                f"{indent}      long __redu_num_red = static_cast<long>(__redu_target_red - __redu_start_red) * __redu_i;"
+            )
+            lines.append(f"{indent}      if (__redu_num_red >= 0L) {{ __redu_num_red += __redu_steps / 2; }}")
+            lines.append(f"{indent}      else {{ __redu_num_red -= __redu_steps / 2; }}")
+            lines.append(f"{indent}      int __redu_red = __redu_start_red + static_cast<int>(__redu_num_red / __redu_steps);")
+            lines.append(
+                f"{indent}      long __redu_num_green = static_cast<long>(__redu_target_green - __redu_start_green) * __redu_i;"
+            )
+            lines.append(f"{indent}      if (__redu_num_green >= 0L) {{ __redu_num_green += __redu_steps / 2; }}")
+            lines.append(f"{indent}      else {{ __redu_num_green -= __redu_steps / 2; }}")
+            lines.append(f"{indent}      int __redu_green = __redu_start_green + static_cast<int>(__redu_num_green / __redu_steps);")
+            lines.append(
+                f"{indent}      long __redu_num_blue = static_cast<long>(__redu_target_blue - __redu_start_blue) * __redu_i;"
+            )
+            lines.append(f"{indent}      if (__redu_num_blue >= 0L) {{ __redu_num_blue += __redu_steps / 2; }}")
+            lines.append(f"{indent}      else {{ __redu_num_blue -= __redu_steps / 2; }}")
+            lines.append(f"{indent}      int __redu_blue = __redu_start_blue + static_cast<int>(__redu_num_blue / __redu_steps);")
+            lines.append(f"{indent}      {red_var} = __redu_red;")
+            lines.append(f"{indent}      {green_var} = __redu_green;")
+            lines.append(f"{indent}      {blue_var} = __redu_blue;")
+            lines.append(
+                f"{indent}      {state_var} = (({red_var} > 0) || ({green_var} > 0) || ({blue_var} > 0));"
+            )
+            lines.append(f"{indent}      analogWrite({red_pin}, {red_var});")
+            lines.append(f"{indent}      analogWrite({green_pin}, {green_var});")
+            lines.append(f"{indent}      analogWrite({blue_pin}, {blue_var});")
+            lines.append(f"{indent}      if ((__redu_i != __redu_steps) && (__redu_delay_ms > 0UL)) {{")
+            lines.append(f"{indent}        delay(__redu_delay_ms);")
+            lines.append(f"{indent}      }}")
+            lines.append(f"{indent}    }}")
+            lines.append(f"{indent}  }}")
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, RGBLedBlink):
+            pin_codes, color_vars, state_var = _ensure_rgb_tracking(node.name)
+            red_pin, green_pin, blue_pin = pin_codes
+            red_var, green_var, blue_var = color_vars
+            red_expr = _emit_expr(node.red)
+            green_expr = _emit_expr(node.green)
+            blue_expr = _emit_expr(node.blue)
+            times_expr = _emit_expr(node.times)
+            delay_expr = _emit_expr(node.delay_ms)
+            lines.append(f"{indent}{{")
+            lines.append(f"{indent}  int __redu_times = {times_expr};")
+            lines.append(f"{indent}  if (__redu_times < 0) {{ __redu_times = 0; }}")
+            lines.append(f"{indent}  long __redu_delay = {delay_expr};")
+            lines.append(f"{indent}  if (__redu_delay < 0L) {{ __redu_delay = 0L; }}")
+            lines.append(f"{indent}  unsigned long __redu_delay_ms = 0UL;")
+            lines.append(f"{indent}  if (__redu_delay > 0L) {{")
+            lines.append(f"{indent}    __redu_delay_ms = static_cast<unsigned long>(__redu_delay);")
+            lines.append(f"{indent}  }}")
+            lines.append(f"{indent}  int __redu_original_red = {red_var};")
+            lines.append(f"{indent}  int __redu_original_green = {green_var};")
+            lines.append(f"{indent}  int __redu_original_blue = {blue_var};")
+            lines.append(f"{indent}  bool __redu_original_state = {state_var};")
+            lines.append(f"{indent}  int __redu_target_red = {red_expr};")
+            lines.append(f"{indent}  if (__redu_target_red < 0) {{ __redu_target_red = 0; }}")
+            lines.append(f"{indent}  if (__redu_target_red > 255) {{ __redu_target_red = 255; }}")
+            lines.append(f"{indent}  int __redu_target_green = {green_expr};")
+            lines.append(f"{indent}  if (__redu_target_green < 0) {{ __redu_target_green = 0; }}")
+            lines.append(f"{indent}  if (__redu_target_green > 255) {{ __redu_target_green = 255; }}")
+            lines.append(f"{indent}  int __redu_target_blue = {blue_expr};")
+            lines.append(f"{indent}  if (__redu_target_blue < 0) {{ __redu_target_blue = 0; }}")
+            lines.append(f"{indent}  if (__redu_target_blue > 255) {{ __redu_target_blue = 255; }}")
+            lines.append(f"{indent}  for (int __redu_i = 0; __redu_i < __redu_times; ++__redu_i) {{")
+            lines.append(f"{indent}    {red_var} = __redu_target_red;")
+            lines.append(f"{indent}    {green_var} = __redu_target_green;")
+            lines.append(f"{indent}    {blue_var} = __redu_target_blue;")
+            lines.append(
+                f"{indent}    {state_var} = (({red_var} > 0) || ({green_var} > 0) || ({blue_var} > 0));"
+            )
+            lines.append(f"{indent}    analogWrite({red_pin}, {red_var});")
+            lines.append(f"{indent}    analogWrite({green_pin}, {green_var});")
+            lines.append(f"{indent}    analogWrite({blue_pin}, {blue_var});")
+            lines.append(f"{indent}    if (__redu_delay_ms > 0UL) {{")
+            lines.append(f"{indent}      delay(__redu_delay_ms);")
+            lines.append(f"{indent}    }}")
+            lines.append(f"{indent}    {red_var} = 0;")
+            lines.append(f"{indent}    {green_var} = 0;")
+            lines.append(f"{indent}    {blue_var} = 0;")
+            lines.append(f"{indent}    {state_var} = false;")
+            lines.append(f"{indent}    analogWrite({red_pin}, 0);")
+            lines.append(f"{indent}    analogWrite({green_pin}, 0);")
+            lines.append(f"{indent}    analogWrite({blue_pin}, 0);")
+            lines.append(f"{indent}    if (__redu_delay_ms > 0UL) {{")
+            lines.append(f"{indent}      delay(__redu_delay_ms);")
+            lines.append(f"{indent}    }}")
+            lines.append(f"{indent}  }}")
+            lines.append(f"{indent}  {red_var} = __redu_original_red;")
+            lines.append(f"{indent}  {green_var} = __redu_original_green;")
+            lines.append(f"{indent}  {blue_var} = __redu_original_blue;")
+            lines.append(f"{indent}  {state_var} = __redu_original_state;")
+            lines.append(f"{indent}  analogWrite({red_pin}, {red_var});")
+            lines.append(f"{indent}  analogWrite({green_pin}, {green_var});")
+            lines.append(f"{indent}  analogWrite({blue_pin}, {blue_var});")
             lines.append(f"{indent}}}")
             continue
 
@@ -576,6 +850,9 @@ def emit(ast: Program) -> str:
     led_pin: Dict[str, Union[int, str]] = {}
     led_state: Dict[str, str] = {}
     led_brightness: Dict[str, str] = {}
+    rgb_led_pins: Dict[str, Tuple[Union[int, str], Union[int, str], Union[int, str]]] = {}
+    rgb_led_state: Dict[str, str] = {}
+    rgb_led_colors: Dict[str, Tuple[str, str, str]] = {}
     helpers = getattr(ast, "helpers", set())
     ultrasonic_measurements = getattr(ast, "ultrasonic_measurements", set())
 
@@ -600,7 +877,7 @@ def emit(ast: Program) -> str:
         loop_body = []
 
     # Pass 1: collect LED declarations to create globals & pinModes in setup()
-    pin_mode_emitted: Set[Tuple[str, str]] = set()
+    pin_mode_emitted: Set[Tuple[str, ...]] = set()
 
     for node in (setup_body or []):
         if isinstance(node, LedDecl):
@@ -615,6 +892,23 @@ def emit(ast: Program) -> str:
             if bright_line not in globals_:
                 globals_.append(bright_line)
             led_pin[node.name] = node.pin
+        if isinstance(node, RGBLedDecl):
+            state_var = f"__rgb_state_{node.name}"
+            color_vars = (
+                f"__rgb_red_{node.name}",
+                f"__rgb_green_{node.name}",
+                f"__rgb_blue_{node.name}",
+            )
+            rgb_led_state[node.name] = state_var
+            rgb_led_colors[node.name] = color_vars
+            state_line = f"bool {state_var} = false;"
+            if state_line not in globals_:
+                globals_.append(state_line)
+            for var in color_vars:
+                color_line = f"int {var} = 0;"
+                if color_line not in globals_:
+                    globals_.append(color_line)
+            rgb_led_pins[node.name] = (node.red_pin, node.green_pin, node.blue_pin)
         if isinstance(node, UltrasonicDecl):
             ultrasonic_decls[node.name] = node
 
@@ -636,6 +930,39 @@ def emit(ast: Program) -> str:
                 led_pin[node.name] = node.pin
             # Ensure pinMode exists in setup for pins declared in loop
             setup_lines.append(f"  pinMode({_emit_expr(node.pin)}, OUTPUT);")
+        if isinstance(node, RGBLedDecl):
+            state_var = f"__rgb_state_{node.name}"
+            color_vars = (
+                f"__rgb_red_{node.name}",
+                f"__rgb_green_{node.name}",
+                f"__rgb_blue_{node.name}",
+            )
+            if node.name not in rgb_led_state:
+                rgb_led_state[node.name] = state_var
+                state_line = f"bool {state_var} = false;"
+                if state_line not in globals_:
+                    globals_.append(state_line)
+            if node.name not in rgb_led_colors:
+                rgb_led_colors[node.name] = color_vars
+                for var in color_vars:
+                    color_line = f"int {var} = 0;"
+                    if color_line not in globals_:
+                        globals_.append(color_line)
+            else:
+                # Ensure globals exist even if tuple already recorded
+                for var in rgb_led_colors[node.name]:
+                    color_line = f"int {var} = 0;"
+                    if color_line not in globals_:
+                        globals_.append(color_line)
+            rgb_led_pins.setdefault(
+                node.name, (node.red_pin, node.green_pin, node.blue_pin)
+            )
+            for idx, pin in enumerate((node.red_pin, node.green_pin, node.blue_pin)):
+                pin_expr = _emit_expr(pin)
+                key = (node.name, pin_expr, str(idx))
+                if key not in pin_mode_emitted:
+                    pin_mode_emitted.add(key)
+                    setup_lines.append(f"  pinMode({pin_expr}, OUTPUT);")
         if isinstance(node, UltrasonicDecl):
             if node.name not in ultrasonic_decls:
                 ultrasonic_decls[node.name] = node
@@ -657,6 +984,9 @@ def emit(ast: Program) -> str:
             led_pin,
             led_state,
             led_brightness,
+            rgb_led_pins,
+            rgb_led_state,
+            rgb_led_colors,
             ultrasonic_decls,
             in_setup=True,
             emitted_pin_modes=pin_mode_emitted,
@@ -674,6 +1004,9 @@ def emit(ast: Program) -> str:
                     led_pin,
                     led_state,
                     led_brightness,
+                    rgb_led_pins,
+                    rgb_led_state,
+                    rgb_led_colors,
                     ultrasonic_decls,
                     in_setup=False,
                     emitted_pin_modes=pin_mode_emitted,
@@ -688,6 +1021,9 @@ def emit(ast: Program) -> str:
             led_pin,
             led_state,
             led_brightness,
+            rgb_led_pins,
+            rgb_led_state,
+            rgb_led_colors,
             ultrasonic_decls,
             in_setup=False,
             emitted_pin_modes=pin_mode_emitted,
@@ -704,6 +1040,9 @@ def emit(ast: Program) -> str:
             dict(led_pin),
             dict(led_state),
             dict(led_brightness),
+            dict(rgb_led_pins),
+            dict(rgb_led_state),
+            dict(rgb_led_colors),
             ultrasonic_decls,
             indent="  ",
             in_setup=False,

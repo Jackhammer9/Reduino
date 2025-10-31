@@ -18,6 +18,12 @@ from Reduino.transpile.ast import (
     VarAssign,
     VarDecl,
     WhileLoop,
+    RGBLedDecl,
+    RGBLedOn,
+    RGBLedSetColor,
+    RGBLedFade,
+    RGBLedBlink,
+    RGBLedOff,
 )
 from Reduino.transpile.parser import parse
 
@@ -200,6 +206,52 @@ def test_parser_preserves_symbolic_expressions(src):
     led_nodes = [node for node in prog.setup_body if isinstance(node, LedDecl)]
     assert len(led_nodes) == 1
     assert led_nodes[0].pin == "(pin_base + offset)"
+
+
+def test_parser_rgb_led_decl_and_actions(src):
+    code = src("""
+        from Reduino.Actuators import RGBLed
+
+        rgb = RGBLed(3, 4, 5)
+        rgb.set_color(10, 20, 30)
+        rgb.on()
+        rgb.fade(255, 0, 0, duration_ms=750, steps=5)
+        rgb.blink(0, 0, 255, times=2, delay_ms=150)
+        rgb.off()
+    """)
+
+    prog = parse(code)
+    nodes = prog.setup_body
+    assert isinstance(nodes[0], RGBLedDecl)
+    assert nodes[0].red_pin == 3
+    assert nodes[0].green_pin == 4
+    assert nodes[0].blue_pin == 5
+    assert isinstance(nodes[1], RGBLedSetColor)
+    assert isinstance(nodes[2], RGBLedOn)
+    assert isinstance(nodes[3], RGBLedFade)
+    assert nodes[3].duration_ms == 750
+    assert nodes[3].steps == 5
+    assert isinstance(nodes[4], RGBLedBlink)
+    assert nodes[4].times == 2
+    assert nodes[4].delay_ms == 150
+    assert isinstance(nodes[5], RGBLedOff)
+
+
+def test_parser_rgb_led_with_keyword_pins(src):
+    code = src("""
+        from Reduino.Actuators import RGBLed
+
+        base = 2
+        rgb = RGBLed(red_pin=base + 1, green_pin=base + 2, blue_pin=base + 3)
+    """)
+
+    prog = parse(code)
+    rgb_nodes = [node for node in prog.setup_body if isinstance(node, RGBLedDecl)]
+    assert len(rgb_nodes) == 1
+    decl = rgb_nodes[0]
+    assert decl.red_pin == "(base + 1)"
+    assert decl.green_pin == "(base + 2)"
+    assert decl.blue_pin == "(base + 3)"
 
 
 def test_parser_serial_monitor_decl_and_write(src):

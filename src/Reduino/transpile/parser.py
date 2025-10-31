@@ -24,6 +24,12 @@ from .ast import (
     LedOn,
     LedSetBrightness,
     LedToggle,
+    RGBLedBlink,
+    RGBLedDecl,
+    RGBLedFade,
+    RGBLedOff,
+    RGBLedOn,
+    RGBLedSetColor,
     Program,
     ReturnStmt,
     SerialMonitorDecl,
@@ -1024,6 +1030,30 @@ def _extract_call_argument(
     return ast.unparse(selected).strip()
 
 
+def _strip_inline_comment(text: str) -> str:
+    """Remove a trailing comment from ``text`` while respecting string literals."""
+
+    in_single = False
+    in_double = False
+    escaped = False
+    for index, char in enumerate(text):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == "'" and not in_double:
+            in_single = not in_single
+            continue
+        if char == '"' and not in_single:
+            in_double = not in_double
+            continue
+        if char == "#" and not in_single and not in_double:
+            return text[:index].rstrip()
+    return text
+
+
 def _annotation_to_type_label(annotation: Optional[ast.AST]) -> str:
     """Translate a Python annotation node into an internal type label."""
 
@@ -1102,6 +1132,7 @@ def _merge_return_types(types: List[str], has_void: bool) -> str:
 
 # Imports to ignore
 RE_IMPORT_LED     = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+Led\s*$")
+RE_IMPORT_RGB_LED = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+RGBLed\s*$")
 RE_IMPORT_SLEEP   = re.compile(r"^\s*from\s+Reduino\.Time\s+import\s+Sleep\s*$")
 RE_IMPORT_SERIAL  = re.compile(r"^\s*from\s+Reduino\.Utils\s+import\s+SerialMonitor\s*$")
 RE_IMPORT_TARGET  = re.compile(r"^\s*from\s+Reduino\s+import\s+target\s*$")
@@ -1110,6 +1141,7 @@ RE_IMPORT_ULTRASONIC = re.compile(r"^\s*from\s+Reduino\.Sensors\s+import\s+Ultra
 # Led Primitives
 RE_ASSIGN     = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*(.+)$")
 RE_LED_DECL   = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Led\s*\(\s*(.*?)\s*\)\s*$")
+RE_RGB_LED_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*RGBLed\s*\(\s*(.*?)\s*\)\s*$")
 RE_ULTRASONIC_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Ultrasonic\s*\(\s*(.*?)\s*\)\s*$")
 RE_LED_ON         = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.on\(\s*\)\s*$")
 RE_LED_OFF        = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.off\(\s*\)\s*$")
@@ -1119,6 +1151,11 @@ RE_LED_BLINK      = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.blink\(\s*(.*)\s*\)\s*$"
 RE_LED_FADE_IN    = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.fade_in\(\s*(.*)\s*\)\s*$")
 RE_LED_FADE_OUT   = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.fade_out\(\s*(.*)\s*\)\s*$")
 RE_LED_FLASH_PATTERN = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.flash_pattern\(\s*(.*)\s*\)\s*$")
+RE_RGB_LED_ON        = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.on\(\s*(.*)\s*\)\s*$")
+RE_RGB_LED_OFF       = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.off\(\s*\)\s*$")
+RE_RGB_LED_SET_COLOR = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.set_color\(\s*(.*)\s*\)\s*$")
+RE_RGB_LED_FADE      = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.fade\(\s*(.*)\s*\)\s*$")
+RE_RGB_LED_BLINK     = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.blink\(\s*(.*)\s*\)\s*$")
 
 # Serial primitives
 RE_SERIAL_DECL    = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*SerialMonitor\s*\(\s*(.*?)\s*\)\s*$")
@@ -1420,6 +1457,9 @@ def _handle_assignment_ast(
     def is_led_call(n: ast.AST) -> bool:
         return isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "Led"
 
+    def is_rgb_led_call(n: ast.AST) -> bool:
+        return isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "RGBLed"
+
     def is_serial_monitor_call(n: ast.AST) -> bool:
         return (
             isinstance(n, ast.Call)
@@ -1431,12 +1471,18 @@ def _handle_assignment_ast(
         return isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "Ultrasonic"
 
     if isinstance(target, ast.Name) and (
-        is_led_call(value) or is_serial_monitor_call(value) or is_ultrasonic_call(value)
+        is_led_call(value)
+        or is_rgb_led_call(value)
+        or is_serial_monitor_call(value)
+        or is_ultrasonic_call(value)
     ):
         return None
     if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
         if any(
-            is_led_call(elt) or is_serial_monitor_call(elt) or is_ultrasonic_call(elt)
+            is_led_call(elt)
+            or is_rgb_led_call(elt)
+            or is_serial_monitor_call(elt)
+            or is_ultrasonic_call(elt)
             for elt in value.elts
         ):
             return None
@@ -1856,6 +1902,7 @@ def _parse_simple_lines(
     ctx.setdefault("var_declared", set())
     ctx.setdefault("functions", {})
     list_info = ctx.setdefault("list_info", {})
+    rgb_led_names = ctx.setdefault("rgb_led_names", set())
 
     def _resolve_numeric_arg(arg_src: Optional[str], default: Union[int, str]) -> Union[int, str]:
         if arg_src is None or not arg_src.strip():
@@ -1879,7 +1926,11 @@ def _parse_simple_lines(
     i = 0
     while i < len(snippet):
         raw = snippet[i]
-        line = raw.strip()
+        stripped = _strip_inline_comment(raw)
+        line = stripped.strip()
+        if not line:
+            i += 1
+            continue
         if not line or line.startswith('#'):
             i += 1
             continue
@@ -1887,6 +1938,7 @@ def _parse_simple_lines(
         # ignore imports
         if (
             RE_IMPORT_LED.match(line)
+            or RE_IMPORT_RGB_LED.match(line)
             or RE_IMPORT_SLEEP.match(line)
             or RE_IMPORT_SERIAL.match(line)
             or RE_IMPORT_TARGET.match(line)
@@ -2364,6 +2416,54 @@ def _parse_simple_lines(
             i += 1
             continue
 
+        m = RE_RGB_LED_DECL.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            red_arg = _extract_call_argument(args_src, keyword="red_pin")
+            if red_arg is None:
+                red_arg = _extract_call_argument(args_src)
+            green_arg = _extract_call_argument(args_src, keyword="green_pin")
+            if green_arg is None:
+                green_arg = _extract_call_argument(args_src, position=1)
+            blue_arg = _extract_call_argument(args_src, keyword="blue_pin")
+            if blue_arg is None:
+                blue_arg = _extract_call_argument(args_src, position=2)
+            if not red_arg or not green_arg or not blue_arg:
+                raise ValueError("RGBLed requires red, green, and blue pins")
+
+            def _resolve_rgb_pin(src_text: str) -> Union[int, str]:
+                text = src_text.strip()
+                try:
+                    expr_ast = ast.parse(text, mode="eval").body
+                except Exception:
+                    expr_ast = None
+                if expr_ast is not None and not _expr_has_name(expr_ast):
+                    try:
+                        value = _eval_const(text, vars)
+                    except Exception:
+                        pass
+                    else:
+                        if isinstance(value, bool):
+                            return 1 if value else 0
+                        if isinstance(value, (int, float)):
+                            return int(value)
+                return _to_c_expr(text, vars, ctx)
+
+            red_value = _resolve_rgb_pin(red_arg)
+            green_value = _resolve_rgb_pin(green_arg)
+            blue_value = _resolve_rgb_pin(blue_arg)
+            body.append(
+                RGBLedDecl(
+                    name=name,
+                    red_pin=red_value,
+                    green_pin=green_value,
+                    blue_pin=blue_value,
+                )
+            )
+            rgb_led_names.add(name)
+            i += 1
+            continue
+
         m = RE_ULTRASONIC_DECL.match(line)
         if m:
             name, args_src = m.group(1), m.group(2)
@@ -2454,6 +2554,132 @@ def _parse_simple_lines(
             continue
 
         # Actions
+        m = RE_RGB_LED_SET_COLOR.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in rgb_led_names:
+                red_arg = _extract_call_argument(args_src, keyword="red")
+                if red_arg is None:
+                    red_arg = _extract_call_argument(args_src)
+                green_arg = _extract_call_argument(args_src, keyword="green")
+                if green_arg is None:
+                    green_arg = _extract_call_argument(args_src, position=1)
+                blue_arg = _extract_call_argument(args_src, keyword="blue")
+                if blue_arg is None:
+                    blue_arg = _extract_call_argument(args_src, position=2)
+                if red_arg is None or green_arg is None or blue_arg is None:
+                    raise ValueError("set_color requires red, green, and blue components")
+                red_value = _resolve_numeric_arg(red_arg, 0)
+                green_value = _resolve_numeric_arg(green_arg, 0)
+                blue_value = _resolve_numeric_arg(blue_arg, 0)
+                body.append(
+                    RGBLedSetColor(
+                        name=name,
+                        red=red_value,
+                        green=green_value,
+                        blue=blue_value,
+                    )
+                )
+                i += 1
+                continue
+
+        m = RE_RGB_LED_ON.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in rgb_led_names:
+                red_arg = _extract_call_argument(args_src)
+                green_arg = _extract_call_argument(args_src, position=1)
+                blue_arg = _extract_call_argument(args_src, position=2)
+                red_value = _resolve_numeric_arg(red_arg, 255)
+                green_value = _resolve_numeric_arg(green_arg, 255)
+                blue_value = _resolve_numeric_arg(blue_arg, 255)
+                body.append(
+                    RGBLedOn(
+                        name=name,
+                        red=red_value,
+                        green=green_value,
+                        blue=blue_value,
+                    )
+                )
+                i += 1
+                continue
+
+        m = RE_RGB_LED_OFF.match(line)
+        if m:
+            name = m.group(1)
+            if name in rgb_led_names:
+                body.append(RGBLedOff(name=name))
+                i += 1
+                continue
+
+        m = RE_RGB_LED_FADE.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in rgb_led_names:
+                red_arg = _extract_call_argument(args_src, keyword="red")
+                if red_arg is None:
+                    red_arg = _extract_call_argument(args_src)
+                green_arg = _extract_call_argument(args_src, keyword="green")
+                if green_arg is None:
+                    green_arg = _extract_call_argument(args_src, position=1)
+                blue_arg = _extract_call_argument(args_src, keyword="blue")
+                if blue_arg is None:
+                    blue_arg = _extract_call_argument(args_src, position=2)
+                if red_arg is None or green_arg is None or blue_arg is None:
+                    raise ValueError("fade requires red, green, and blue components")
+                duration_arg = _extract_call_argument(args_src, keyword="duration_ms")
+                if duration_arg is None:
+                    duration_arg = _extract_call_argument(args_src, position=3)
+                steps_arg = _extract_call_argument(args_src, keyword="steps")
+                if steps_arg is None:
+                    steps_arg = _extract_call_argument(args_src, position=4)
+                body.append(
+                    RGBLedFade(
+                        name=name,
+                        red=_resolve_numeric_arg(red_arg, 0),
+                        green=_resolve_numeric_arg(green_arg, 0),
+                        blue=_resolve_numeric_arg(blue_arg, 0),
+                        duration_ms=_resolve_numeric_arg(duration_arg, 1000),
+                        steps=_resolve_numeric_arg(steps_arg, 50),
+                    )
+                )
+                i += 1
+                continue
+
+        m = RE_RGB_LED_BLINK.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in rgb_led_names:
+                red_arg = _extract_call_argument(args_src, keyword="red")
+                if red_arg is None:
+                    red_arg = _extract_call_argument(args_src)
+                green_arg = _extract_call_argument(args_src, keyword="green")
+                if green_arg is None:
+                    green_arg = _extract_call_argument(args_src, position=1)
+                blue_arg = _extract_call_argument(args_src, keyword="blue")
+                if blue_arg is None:
+                    blue_arg = _extract_call_argument(args_src, position=2)
+                if red_arg is None or green_arg is None or blue_arg is None:
+                    raise ValueError("blink requires red, green, and blue components")
+                times_arg = _extract_call_argument(args_src, keyword="times")
+                if times_arg is None:
+                    times_arg = _extract_call_argument(args_src, position=3)
+                delay_arg = _extract_call_argument(args_src, keyword="delay_ms")
+                if delay_arg is None:
+                    delay_arg = _extract_call_argument(args_src, position=4)
+                body.append(
+                    RGBLedBlink(
+                        name=name,
+                        red=_resolve_numeric_arg(red_arg, 0),
+                        green=_resolve_numeric_arg(green_arg, 0),
+                        blue=_resolve_numeric_arg(blue_arg, 0),
+                        times=_resolve_numeric_arg(times_arg, 1),
+                        delay_ms=_resolve_numeric_arg(delay_arg, 200),
+                    )
+                )
+                i += 1
+                continue
+
         m = RE_LED_ON.match(line)
         if m:
             body.append(LedOn(name=m.group(1)))

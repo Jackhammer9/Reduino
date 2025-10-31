@@ -2,7 +2,7 @@
 
 import pytest
 
-from Reduino.Actuators import Led
+from Reduino.Actuators import Led, RGBLed
 from Reduino.transpile.ast import LedDecl
 from Reduino.transpile.emitter import emit
 from Reduino.transpile.parser import parse
@@ -115,6 +115,87 @@ def test_led_flash_pattern(monkeypatch):
 
     with pytest.raises(ValueError):
         led.flash_pattern([300])
+
+
+def test_rgb_led_initial_state_and_pin_validation():
+    led = RGBLed(9, 10, 11)
+    assert led.pins == (9, 10, 11)
+    assert led.get_color() == (0, 0, 0)
+    assert led.get_state() is False
+
+    with pytest.raises(TypeError):
+        RGBLed("9", 10, 11)  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        RGBLed(-1, 10, 11)
+
+
+def test_rgb_led_color_control_and_validation():
+    led = RGBLed(3, 5, 6)
+
+    led.on(10, 20, 30)
+    assert led.get_color() == (10, 20, 30)
+    assert led.get_state() is True
+
+    led.set_color(0, 128, 255)
+    assert led.get_color() == (0, 128, 255)
+
+    led.off()
+    assert led.get_color() == (0, 0, 0)
+    assert led.get_state() is False
+
+    with pytest.raises(ValueError):
+        led.set_color(256, 0, 0)
+    with pytest.raises(TypeError):
+        led.set_color(1, 2, 3.5)  # type: ignore[arg-type]
+
+
+def test_rgb_led_fade_uses_sleep(monkeypatch):
+    led = RGBLed(4, 5, 6)
+    calls: list[float] = []
+
+    class FakeSleep:
+        def __init__(self, duration: float, *, sleep_func=None) -> None:  # pragma: no cover - helper
+            calls.append(duration)
+
+        def wait(self) -> None:  # pragma: no cover - helper
+            pass
+
+    monkeypatch.setattr("Reduino.Actuators.Sleep", FakeSleep)
+
+    led.fade(255, 0, 0, duration_ms=40, steps=4)
+    assert led.get_color() == (255, 0, 0)
+    assert led.get_state() is True
+    assert calls == [10.0, 10.0, 10.0]
+
+    with pytest.raises(ValueError):
+        led.fade(0, 0, 0, duration_ms=-1)
+    with pytest.raises(ValueError):
+        led.fade(0, 0, 0, steps=0)
+
+
+def test_rgb_led_blink_restores_original_color(monkeypatch):
+    led = RGBLed(7, 8, 9)
+    led.set_color(5, 15, 25)
+    calls: list[int] = []
+
+    class FakeSleep:
+        def __init__(self, duration: int, *, sleep_func=None) -> None:  # pragma: no cover - helper
+            calls.append(duration)
+
+        def wait(self) -> None:  # pragma: no cover - helper
+            pass
+
+    monkeypatch.setattr("Reduino.Actuators.Sleep", FakeSleep)
+
+    led.blink(255, 0, 0, times=2, delay_ms=25)
+    assert led.get_color() == (5, 15, 25)
+    assert calls == [25, 25, 25, 25]
+
+    with pytest.raises(ValueError):
+        led.blink(0, 0, 0, times=0)
+    with pytest.raises(ValueError):
+        led.blink(0, 0, 0, delay_ms=-1)
+
 
 def test_led_parser_defaults_builtin_pin(src):
     code = src(
