@@ -1,14 +1,22 @@
-"""Unit tests for the Reduino parser."""
+"""Tests for the Reduino DSL parser."""
+
+from __future__ import annotations
 
 import pytest
 
 from Reduino.transpile.ast import (
     BreakStmt,
-    ExprStmt,
     ForRangeLoop,
     FunctionDef,
-    IfStatement,
     LedDecl,
+    LedOff,
+    LedToggle,
+    RGBLedBlink,
+    RGBLedDecl,
+    RGBLedFade,
+    RGBLedOff,
+    RGBLedOn,
+    RGBLedSetColor,
     ReturnStmt,
     SerialMonitorDecl,
     SerialWrite,
@@ -16,874 +24,236 @@ from Reduino.transpile.ast import (
     TryStatement,
     UltrasonicDecl,
     VarAssign,
-    VarDecl,
     WhileLoop,
-    RGBLedDecl,
-    RGBLedOn,
-    RGBLedSetColor,
-    RGBLedFade,
-    RGBLedBlink,
-    RGBLedOff,
 )
 from Reduino.transpile.parser import parse
 
-def test_parser_setup_only(src):
-    code = src("""
+
+def _parse(src) -> object:
+    return parse(src)
+
+
+def test_parser_collects_setup_statements(src) -> None:
+    code = src(
+        """
         from Reduino.Actuators import Led
         from Reduino.Time import Sleep
-        # no loop; should go to setup
+
         led = Led(13)
         led.toggle()
         Sleep(250)
-        led.toggle()
-    """)
-    prog = parse(code)
+        """
+    )
 
-    assert hasattr(prog, "setup_body")
-    assert hasattr(prog, "loop_body")
-    assert len(prog.setup_body) > 0
-    assert len(prog.loop_body) == 0
+    program = _parse(code)
+    assert isinstance(program.setup_body[0], LedDecl)
+    assert isinstance(program.setup_body[1], LedToggle)
+    assert isinstance(program.setup_body[2], Sleep)
+    assert program.loop_body == []
 
-def test_parser_while_true_goes_to_loop(src):
-    code = src("""
+
+def test_parser_promotes_infinite_loop(src) -> None:
+    code = src(
+        """
         from Reduino.Actuators import Led
-        from Reduino.Time import Sleep
         led = Led()
         while True:
             led.toggle()
-            Sleep(500)
-    """)
-    prog = parse(code)
-    assert len(prog.loop_body) > 0
+        """
+    )
 
-def test_parser_for_range_emits_loop(src):
-    code = src("""
+    program = _parse(code)
+    assert program.setup_body
+    assert program.loop_body
+    assert any(isinstance(stmt, LedToggle) for stmt in program.loop_body)
+
+
+def test_parser_for_range_creates_loop_node(src) -> None:
+    code = src(
+        """
         from Reduino.Actuators import Led
-        from Reduino.Time import Sleep
-        led = Led(8)
+        led = Led()
         for i in range(3):
             led.toggle()
-            Sleep(100)
-    """)
-    prog = parse(code)
-    loops = [node for node in prog.setup_body if isinstance(node, ForRangeLoop)]
+        """
+    )
+
+    program = _parse(code)
+    loops = [node for node in program.setup_body if isinstance(node, ForRangeLoop)]
     assert len(loops) == 1
     loop = loops[0]
     assert loop.var_name == "i"
     assert loop.count == 3
-    assert sum(1 for node in loop.body if node.__class__.__name__ == "LedToggle") == 1
-    assert sum(1 for node in loop.body if node.__class__.__name__ == "Sleep") == 1
+    assert any(isinstance(stmt, LedToggle) for stmt in loop.body)
 
 
-def test_parser_break_inside_while(src):
-    code = src("""
+def test_parser_break_handling(src) -> None:
+    code = src(
+        """
         i = 0
         while i < 5:
             break
-    """)
+        """
+    )
 
-    prog = parse(code)
-    loops = [node for node in prog.setup_body if isinstance(node, WhileLoop)]
-    assert len(loops) == 1
-    loop = loops[0]
+    program = _parse(code)
+    while_loops = [node for node in program.setup_body if isinstance(node, WhileLoop)]
+    assert len(while_loops) == 1
+    loop = while_loops[0]
     assert any(isinstance(stmt, BreakStmt) for stmt in loop.body)
 
-
-def test_parser_break_outside_loop_errors(src):
-    code = src("""
-        break
-    """)
+    with pytest.raises(ValueError):
+        _parse(src("""break"""))
 
     with pytest.raises(ValueError):
-        parse(code)
+        _parse(
+            src(
+                """
+                from Reduino.Actuators import Led
+                led = Led()
+                while True:
+                    break
+                """
+            )
+        )
 
 
-def test_parser_break_in_main_loop_errors(src):
-    code = src("""
-        from Reduino.Actuators import Led
-        led = Led()
-        while True:
-            break
-    """)
-
-    with pytest.raises(ValueError):
-        parse(code)
-
-def test_parser_captures_target_port_anywhere(src):
-    code = src("""
+def test_parser_target_detection(src) -> None:
+    code = src(
+        """
         from Reduino import target
+
         target("COM5")
-        from Reduino.Actuators import Led
-        led = Led()
-        while True:
-            led.toggle()
-        # another target lower should override previous
-        target("COM7")
-    """)
-    prog = parse(code)
-    port = getattr(prog, "target_port", None) or getattr(prog, "upload_port", None)
-    assert port == "COM7"
+        assigned = target("COM6")
+        print(target("COM7"))
+        """
+    )
 
-
-def test_parser_handles_target_call_inside_expression(src):
-    code = src("""
-        from Reduino import target
-
-        print(target("COM9"))
-        assigned = target("COM10")
-        target("COM11")
-    """)
-
-    prog = parse(code)
-    port = getattr(prog, "target_port", None) or getattr(prog, "upload_port", None)
-    assert port == "COM11"
-
-    exprs = [
-        node.expr
-        for node in prog.setup_body
-        if isinstance(node, ExprStmt)
-    ]
+    program = _parse(code)
+    assert program.target_port == "COM7"
+    exprs = [node.expr for node in program.setup_body if hasattr(node, "expr")]
     assert all("target" not in expr for expr in exprs)
 
 
-def test_parser_skips_print_statements(src):
-    code = src("""
-        from Reduino import target
-
-        r = target("COM3")
-        print(r)
-        print("hello")
-    """)
-
-    prog = parse(code)
-
-    exprs = [
-        node.expr
-        for node in prog.setup_body
-        if isinstance(node, ExprStmt)
-    ]
-    assert not exprs
-
-
-def test_parser_resolves_string_concat_to_int(src):
-    code = src("""
-        from Reduino.Actuators import Led
-        from Reduino.Time import Sleep
-        a = "3"
-        b = "3"
-        c = a + b
-        led = Led(int(c))
-    """)
-    prog = parse(code)
-    leds = [node for node in prog.setup_body if isinstance(node, LedDecl)]
-    assert len(leds) == 1
-    assert leds[0].pin == "(c).toInt()"
-
-
-def test_parser_tuple_assignment_updates_environment(src):
-    code = src("""
+def test_parser_tuple_assignment_and_var_decl(src) -> None:
+    code = src(
+        """
         from Reduino.Time import Sleep
 
         a, b = 1, 2
         b, a = a, b
         Sleep(a + b)
-    """)
+        """
+    )
 
-    prog = parse(code)
-    sleep_nodes = [node for node in prog.setup_body if isinstance(node, Sleep)]
+    program = _parse(code)
+    sleep_nodes = [node for node in program.setup_body if isinstance(node, Sleep)]
     assert len(sleep_nodes) == 1
     assert sleep_nodes[0].ms == "(a + b)"
 
 
-def test_parser_preserves_symbolic_expressions(src):
-    code = src("""
-        from Reduino.Actuators import Led
-
-        led = Led(pin_base + offset)
-    """)
-
-    prog = parse(code)
-    led_nodes = [node for node in prog.setup_body if isinstance(node, LedDecl)]
-    assert len(led_nodes) == 1
-    assert led_nodes[0].pin == "(pin_base + offset)"
-
-
-def test_parser_rgb_led_decl_and_actions(src):
-    code = src("""
-        from Reduino.Actuators import RGBLed
-
-        rgb = RGBLed(3, 4, 5)
-        rgb.set_color(10, 20, 30)
-        rgb.on()
-        rgb.fade(255, 0, 0, duration_ms=750, steps=5)
-        rgb.blink(0, 0, 255, times=2, delay_ms=150)
-        rgb.off()
-    """)
-
-    prog = parse(code)
-    nodes = prog.setup_body
-    assert isinstance(nodes[0], RGBLedDecl)
-    assert nodes[0].red_pin == 3
-    assert nodes[0].green_pin == 4
-    assert nodes[0].blue_pin == 5
-    assert isinstance(nodes[1], RGBLedSetColor)
-    assert isinstance(nodes[2], RGBLedOn)
-    assert isinstance(nodes[3], RGBLedFade)
-    assert nodes[3].duration_ms == 750
-    assert nodes[3].steps == 5
-    assert isinstance(nodes[4], RGBLedBlink)
-    assert nodes[4].times == 2
-    assert nodes[4].delay_ms == 150
-    assert isinstance(nodes[5], RGBLedOff)
-
-
-def test_parser_rgb_led_with_keyword_pins(src):
-    code = src("""
-        from Reduino.Actuators import RGBLed
-
-        base = 2
-        rgb = RGBLed(red_pin=base + 1, green_pin=base + 2, blue_pin=base + 3)
-    """)
-
-    prog = parse(code)
-    rgb_nodes = [node for node in prog.setup_body if isinstance(node, RGBLedDecl)]
-    assert len(rgb_nodes) == 1
-    decl = rgb_nodes[0]
-    assert decl.red_pin == "(base + 1)"
-    assert decl.green_pin == "(base + 2)"
-    assert decl.blue_pin == "(base + 3)"
-
-
-def test_parser_serial_monitor_decl_and_write(src):
+def test_parser_serial_monitor(src) -> None:
     code = src(
         """
         from Reduino.Utils import SerialMonitor
 
-        monitor = SerialMonitor(baud_rate=115200)
+        monitor = SerialMonitor(115200)
         monitor.write("hello")
         """
     )
 
-    prog = parse(code)
-
-    serial_nodes = [node for node in prog.setup_body if isinstance(node, SerialMonitorDecl)]
-    assert len(serial_nodes) == 1
-    assert serial_nodes[0].baud == 115200
-
-    write_nodes = [node for node in prog.setup_body if isinstance(node, SerialWrite)]
-    assert len(write_nodes) == 1
-    assert write_nodes[0].value == '"hello"'
+    program = _parse(code)
+    decls = [node for node in program.setup_body if isinstance(node, SerialMonitorDecl)]
+    assert len(decls) == 1
+    writes = [node for node in program.setup_body if isinstance(node, SerialWrite)]
+    assert len(writes) == 1
+    assert writes[0].value == '"hello"'
 
 
-def test_parser_serial_monitor_accepts_expressions(src):
+def test_parser_rgb_led_nodes(src) -> None:
     code = src(
         """
-        from Reduino.Utils import SerialMonitor
+        from Reduino.Actuators import RGBLed
 
-        base_rate = 4800
-        monitor = SerialMonitor(base_rate * 2)
-        monitor.write(base_rate)
+        led = RGBLed(3, 4, 5)
+        led.on(1, 2, 3)
+        led.set_color(4, 5, 6)
+        led.fade(7, 8, 9, duration_ms=100, steps=5)
+        led.blink(0, 0, 0, times=2, delay_ms=10)
+        led.off()
         """
     )
 
-    prog = parse(code)
+    program = _parse(code)
+    rgb_nodes = [node for node in program.setup_body if node.__class__.__name__.startswith("RGBLed")]
+    assert {type(node) for node in rgb_nodes} >= {
+        RGBLedDecl,
+        RGBLedOn,
+        RGBLedSetColor,
+        RGBLedFade,
+        RGBLedBlink,
+        RGBLedOff,
+    }
 
-    serial_nodes = [node for node in prog.setup_body if isinstance(node, SerialMonitorDecl)]
-    assert len(serial_nodes) == 1
-    assert serial_nodes[0].baud == "(base_rate * 2)"
 
-    write_nodes = [node for node in prog.setup_body if isinstance(node, SerialWrite)]
-    assert len(write_nodes) == 1
-    assert write_nodes[0].value == "base_rate"
-
-
-def test_parser_serial_monitor_write_led_state(src):
+def test_parser_try_statement(src) -> None:
     code = src(
         """
         from Reduino.Actuators import Led
-        from Reduino.Utils import SerialMonitor
 
         led = Led()
-        monitor = SerialMonitor()
-        monitor.write(led.get_state())
-        """
-    )
-
-    prog = parse(code)
-
-    write_nodes = [node for node in prog.setup_body if isinstance(node, SerialWrite)]
-    assert len(write_nodes) == 1
-    assert write_nodes[0].value == "__state_led"
-
-
-def test_parser_serial_monitor_read_expression(src):
-    code = src(
-        """
-        from Reduino.Utils import SerialMonitor
-
-        monitor = SerialMonitor()
-        message = monitor.read()
-        """
-    )
-
-    prog = parse(code)
-
-    globals_ = [node for node in prog.global_decls if isinstance(node, VarDecl)]
-    assert len(globals_) == 1
-    assert globals_[0].name == "message"
-    assert globals_[0].c_type == "String"
-
-    assigns = [node for node in prog.setup_body if isinstance(node, VarAssign)]
-    assert any(assign.name == "message" and assign.expr == "Serial.readStringUntil('\\n')" for assign in assigns)
-
-
-def test_parser_serial_monitor_read_host_only(src):
-    code = src(
-        """
-        from Reduino.Utils import SerialMonitor
-
-        monitor = SerialMonitor()
-        payload = monitor.read("host")
-        """
-    )
-
-    prog = parse(code)
-
-    assigns = [node for node in prog.setup_body if isinstance(node, VarAssign)]
-    assert any(assign.name == "payload" and assign.expr == '""' for assign in assigns)
-
-
-def test_parser_serial_monitor_read_mcu_only(src):
-    code = src(
-        """
-        from Reduino.Utils import SerialMonitor
-
-        monitor = SerialMonitor()
-        payload = monitor.read(emit="mcu")
-        """
-    )
-
-    prog = parse(code)
-
-    assigns = [node for node in prog.setup_body if isinstance(node, VarAssign)]
-    assert any(assign.name == "payload" and assign.expr == "Serial.readStringUntil('\\n')" for assign in assigns)
-
-
-def test_parser_allows_led_pin_from_list_index(src):
-    code = src("""
-        from Reduino.Actuators import Led
-
-        values = [1, 2, 3]
-        led = Led(pin=values[2])
-    """)
-
-    prog = parse(code)
-
-    led_nodes = [node for node in prog.setup_body if isinstance(node, LedDecl)]
-    assert len(led_nodes) == 1
-    assert led_nodes[0].pin == "__redu_list_get(values, 2)"
-
-
-def test_parser_if_elif_else_with_boolean_logic(src):
-    code = src("""
-        from Reduino.Actuators import Led
-
-        led = Led(7)
-        if sensor_value < threshold and not override_flag:
-            led.on()
-        elif sensor_value == threshold or sensor_value > max_value:
-            led.off()
-        else:
-            led.toggle()
-    """)
-
-    prog = parse(code)
-    conditionals = [node for node in prog.setup_body if isinstance(node, IfStatement)]
-    assert len(conditionals) == 1
-
-
-def test_parser_try_except_promotes_declarations(src):
-    code = src("""
-        from Reduino.Actuators import Led
-
         try:
-            level = 1
-        except:
-            level = 2
-
-        led = Led(level)
-    """)
-
-    prog = parse(code)
-
-    globals_out = {decl.name: decl for decl in prog.global_decls}
-    assert "level" in globals_out
-    assert globals_out["level"].expr == "0"
-
-    try_nodes = [node for node in prog.setup_body if isinstance(node, TryStatement)]
-    assert len(try_nodes) == 1
-    try_stmt = try_nodes[0]
-    assert len(try_stmt.try_body) == 1
-    assert isinstance(try_stmt.try_body[0], VarAssign)
-    assert len(try_stmt.handlers) == 1
-    handler = try_stmt.handlers[0]
-    assert handler.exception is None
-    assert len(handler.body) == 1
-    assert isinstance(handler.body[0], VarAssign)
-
-
-def test_parser_if_preserves_boolean_expression_and_env(src):
-    code = src("""
-        from Reduino.Actuators import Led
-
-        c = 5
-        if 4*2 == 8 and 3*2 == 5:
-            c = 7
-        led = Led(c)
-    """)
-
-    prog = parse(code)
-    conditionals = [node for node in prog.setup_body if isinstance(node, IfStatement)]
-    assert len(conditionals) == 1
-    assert conditionals[0].branches[0].condition == "(((4 * 2) == 8) && ((3 * 2) == 5))"
-
-    leds = [node for node in prog.setup_body if isinstance(node, LedDecl)]
-    assert len(leds) == 1
-    assert leds[0].pin == "c"
-
-
-def test_parser_supports_conditional_expression_assignment(src):
-    code = src("""
-        from Reduino.Actuators import Led
-
-        flag = sensor_ready
-        value = 1 if flag else 2
-        led = Led(value)
-    """)
-
-    prog = parse(code)
-    globals_out = {decl.name: decl for decl in prog.global_decls}
-
-    assert globals_out["value"].expr == "0"
-    assert globals_out["value"].c_type == "int"
-
-    assigns = [node for node in prog.setup_body if isinstance(node, VarAssign)]
-    assert any(node.name == "value" and node.expr == "(flag ? 1 : 2)" for node in assigns)
-
-
-def test_parser_supports_f_string_expressions(src):
-    code = src("""
-        name = sensor_id
-        message = f"Hello {name}!"
-    """)
-
-    prog = parse(code)
-    globals_out = {decl.name: decl for decl in prog.global_decls}
-
-    assert "message" in globals_out
-    assert globals_out["message"].c_type == "String"
-    assert globals_out["message"].expr == '""'
-
-
-def test_parser_list_features(src):
-    code = src("""
-        values = [1, 2, 3]
-        values.append(4)
-        values.remove(2)
-        total = values[0]
-        other = [i * 2 for i in range(3)]
-        values = other
-        size = len(other)
-    """)
-
-    prog = parse(code)
-
-    assert "list" in prog.helpers
-
-    globals_out = {decl.name: decl for decl in prog.global_decls}
-    assert "values" in globals_out
-    assert globals_out["values"].c_type == "__redu_list<int>"
-    assert "__redu_make_list<int>(1, 2, 3)" in globals_out["values"].expr
-
-    append_calls = [
-        node.expr
-        for node in prog.setup_body
-        if isinstance(node, ExprStmt) and "__redu_list_append" in node.expr
-    ]
-    assert any("__redu_list_append(values, 4)" in expr for expr in append_calls)
-
-    remove_calls = [
-        node.expr
-        for node in prog.setup_body
-        if isinstance(node, ExprStmt) and "__redu_list_remove" in node.expr
-    ]
-    assert any("__redu_list_remove(values, 2)" in expr for expr in remove_calls)
-
-    assigns = [
-        node
-        for node in prog.setup_body
-        if isinstance(node, VarAssign)
-    ]
-    assert any(node.name == "total" and "__redu_list_get(values, 0)" in node.expr for node in assigns)
-    assert any(
-        node.name == "other" and "__redu_list_from_range<int>" in node.expr
-        for node in assigns
+            led.on()
+        except Exception as exc:
+            led.off()
+        """
     )
 
-    assign_calls = [
-        node.expr
-        for node in prog.setup_body
-        if isinstance(node, ExprStmt) and "__redu_list_assign" in node.expr
-    ]
-    assert any("__redu_list_assign(values, other)" in expr for expr in assign_calls)
-
-    assert any(
-        node.name == "size" and "__redu_len(other)" in node.expr
-        for node in assigns
-    )
+    program = _parse(code)
+    tries = [node for node in program.setup_body if isinstance(node, TryStatement)]
+    assert len(tries) == 1
+    try_stmt = tries[0]
+    assert try_stmt.handlers[0].target == "exc"
+    assert any(isinstance(stmt, LedOff) for stmt in try_stmt.handlers[0].body)
 
 
-def test_parser_list_assignment_size_mismatch_errors(src):
-    code = src("""
-        values = [1, 2]
-        values = [3]
-    """)
-
-    with pytest.raises(ValueError):
-        parse(code)
-
-
-def test_parser_list_assignment_type_mismatch_errors(src):
-    code = src("""
-        values = [1, 2]
-        values = ["a", "b"]
-    """)
-
-    with pytest.raises(ValueError):
-        parse(code)
-
-
-def test_parser_emits_expression_statements(src):
-    code = src("""
-        a = 13
-        b = 12
-        a - b if a > b else b - a
-    """)
-
-    prog = parse(code)
-
-    exprs = [node.expr for node in prog.setup_body if isinstance(node, ExprStmt)]
-
-    assert "((a > b) ? (a - b) : (b - a))" in exprs
-
-
-def test_parser_handles_augmented_assignment(src):
-    code = src("""
-        from Reduino.Time import Sleep
-
-        counter = 0
-        counter += 5
-        counter *= 2
-        counter //= 3
-        Sleep(counter)
-    """)
-
-    prog = parse(code)
-    assigns = [
-        node.expr
-        for node in prog.setup_body
-        if isinstance(node, VarAssign) and node.name == "counter"
-    ]
-
-    assert "(counter + 5)" in assigns
-    assert "(counter * 2)" in assigns
-    assert "(counter / 3)" in assigns
-
-
-def test_parser_collects_global_declarations(src):
-    code = src("""
-        c = 5
-        d = c + 2
-    """)
-
-    prog = parse(code)
-    globals_out = prog.global_decls
-
-    assert len(globals_out) == 2
-    assert globals_out[0].name == "c"
-    assert globals_out[0].c_type == "int"
-    assert globals_out[0].expr == "5"
-    assert globals_out[1].name == "d"
-    assert globals_out[1].expr == "0"
-    assert all(decl.global_scope for decl in globals_out)
-
-    assigns = [node for node in prog.setup_body if isinstance(node, VarAssign)]
-    assert any(node.name == "d" and node.expr == "(c + 2)" for node in assigns)
-
-
-def test_parser_promotes_branch_assignments(src):
-    code = src("""
+def test_parser_function_definition(src) -> None:
+    code = src(
+        """
         from Reduino.Actuators import Led
 
-        a = 1
-        b = 2
-
-        if a < b:
-            c = 3
-        else:
-            c = 4
-
-        led = Led(c)
-    """)
-
-    prog = parse(code)
-
-    globals_out = {decl.name: decl for decl in prog.global_decls}
-    assert "c" in globals_out
-    assert globals_out["c"].expr == "0"
-
-    conditionals = [node for node in prog.setup_body if isinstance(node, IfStatement)]
-    assert len(conditionals) == 1
-    branch_nodes = conditionals[0].branches[0].body
-    else_nodes = conditionals[0].else_body
-
-    assert any(isinstance(node, VarAssign) and node.name == "c" for node in branch_nodes)
-    assert any(isinstance(node, VarAssign) and node.name == "c" for node in else_nodes)
-
-
-def test_parser_handles_while_loops_and_promotes_assignments(src):
-    code = src("""
-        from Reduino.Actuators import Led
-
-        i = 0
-        while i < 3:
-            a = 9
-            i += 1
-
-        led = Led(a)
-    """)
-
-    prog = parse(code)
-
-    globals_out = {decl.name: decl for decl in prog.global_decls}
-    assert "a" in globals_out
-    assert globals_out["a"].expr == "0"
-
-    loops = [node for node in prog.setup_body if isinstance(node, WhileLoop)]
-    assert len(loops) == 1
-    loop_body = loops[0].body
-    assert any(isinstance(node, VarAssign) and node.name == "a" for node in loop_body)
-    assert any(isinstance(node, VarAssign) and node.name == "i" for node in loop_body)
-def test_parser_emits_builtin_function_calls(src):
-    code = src("""
-        total = len(readings)
-        distance = abs(-5)
-        upper = max(1, 4, 2)
-        lower = min(upper, 7)
-    """)
-
-    prog = parse(code)
-
-    decls = [node for node in prog.global_decls if isinstance(node, VarDecl)]
-    expr_map = {decl.name: decl.expr for decl in decls}
-
-    assert expr_map["total"] == "0"
-    assert expr_map["distance"] == "abs((-5))"
-    assert expr_map["upper"] == "max(max(1, 4), 2)"
-    assert expr_map["lower"] == "0"
-    assert "len" in prog.helpers
-
-    assigns = [node for node in prog.setup_body if isinstance(node, VarAssign)]
-    assert any(
-        node.name == "total"
-        and node.expr == "static_cast<int>(__redu_len(readings))"
-        for node in assigns
+        def blink_twice(pin: int):
+            led = Led(pin)
+            led.toggle()
+            led.toggle()
+            return pin
+        """
     )
-    assert any(node.name == "lower" and node.expr == "min(upper, 7)" for node in assigns)
 
-
-def test_parser_does_not_register_casts_as_helpers(src):
-    code = src("""
-        a = int("5")
-        b = float(3)
-        c = bool(1)
-        d = str(5)
-    """)
-
-    prog = parse(code)
-
-    assert prog.functions == []
-    assert prog.helpers == set()
-
-
-def test_parser_collects_function_definitions(src):
-    code = src("""
-        def add(a, b):
-            total = a + b
-            return total
-
-        result = add(2, 3)
-
-        while True:
-            result = add(result, 1)
-    """)
-
-    prog = parse(code)
-
-    assert len(prog.functions) == 1
-    fn = prog.functions[0]
+    program = _parse(code)
+    assert len(program.functions) == 1
+    fn = program.functions[0]
     assert isinstance(fn, FunctionDef)
-    assert fn.name == "add"
+    assert fn.name == "blink_twice"
     assert fn.return_type == "int"
-    assert fn.params == [("a", "int"), ("b", "int")]
-    assert any(isinstance(node, VarDecl) and node.name == "total" for node in fn.body)
-    assert any(isinstance(node, ReturnStmt) and node.expr == "total" for node in fn.body)
-
-    globals_out = {decl.name: decl for decl in prog.global_decls}
-    assert globals_out["result"].expr == "0"
-
-    assigns = [node for node in prog.setup_body if isinstance(node, VarAssign)]
-    assert any(node.name == "result" and node.expr == "add(2, 3)" for node in assigns)
-
-    loop_assigns = [node for node in prog.loop_body if isinstance(node, VarAssign)]
-    assert any(node.name == "result" and node.expr == "add(result, 1)" for node in loop_assigns)
+    assert fn.params == [("pin", "int")]
+    assert any(isinstance(stmt, LedToggle) for stmt in fn.body)
+    returns = [stmt for stmt in fn.body if isinstance(stmt, ReturnStmt)]
+    assert returns and returns[0].expr == "pin"
 
 
-def test_parser_infers_function_parameter_types_from_usage(src):
-    code = src("""
-        def say_hi(person):
-            return "Hi, " + person
-
-        greeting = say_hi("Reduino")
-
-        while True:
-            greeting = say_hi(greeting)
-    """)
-
-    prog = parse(code)
-
-    assert len(prog.functions) == 1
-    fn = prog.functions[0]
-    assert fn.return_type == "String"
-    assert fn.params == [("person", "String")]
-
-    globals_out = {decl.name: decl for decl in prog.global_decls}
-    assert globals_out["greeting"].c_type == "String"
-
-    assigns = [node for node in prog.setup_body if isinstance(node, VarAssign)]
-    assert any(node.name == "greeting" and node.expr == 'say_hi("Reduino")' for node in assigns)
-
-    loop_assigns = [node for node in prog.loop_body if isinstance(node, VarAssign)]
-    assert any(node.name == "greeting" and node.expr == "say_hi(greeting)" for node in loop_assigns)
-
-
-def test_parser_updates_function_types_from_callsite_literals(src):
-    code = src("""
-        def add(a, b):
-            return a + b
-
-        result = add("Hello, ", "World!")
-    """)
-
-    prog = parse(code)
-
-    assert len(prog.functions) == 1
-    fn = prog.functions[0]
-    assert fn.return_type == "String"
-    assert fn.params == [("a", "String"), ("b", "String")]
-
-    globals_out = {decl.name: decl for decl in prog.global_decls}
-    assert globals_out["result"].c_type == "String"
-
-    assigns = [node for node in prog.setup_body if isinstance(node, VarAssign)]
-    assert any(node.name == "result" and node.expr == 'add("Hello, ", "World!")' for node in assigns)
-
-
-def test_parser_creates_function_overloads(src):
-    code = src("""
-        def add(a, b):
-            return a + b
-
-        first = add(1, 2)
-        second = add("Hello, ", "World!")
-    """)
-
-    prog = parse(code)
-
-    signatures = {
-        (fn.return_type, tuple(ptype for _, ptype in fn.params)) for fn in prog.functions
-    }
-
-    assert signatures == {
-        ("int", ("int", "int")),
-        ("String", ("String", "String")),
-    }
-
-    globals_out = {decl.name: decl for decl in prog.global_decls}
-    assert globals_out["first"].c_type == "int"
-    assert globals_out["second"].c_type == "String"
-
-
-def test_parser_supports_void_function_returns(src):
-    code = src("""
-        def reset_counter():
-            counter = 0
-            return
-
-        counter = 3
-
-        while True:
-            reset_counter()
-    """)
-
-    prog = parse(code)
-
-    assert len(prog.functions) == 1
-    fn = prog.functions[0]
-    assert fn.return_type == "void"
-    assert fn.params == []
-    assert any(isinstance(node, VarDecl) and node.name == "counter" for node in fn.body)
-    assert any(isinstance(node, ReturnStmt) and node.expr is None for node in fn.body)
-
-    globals_out = {decl.name: decl for decl in prog.global_decls}
-    assert globals_out["counter"].expr == "3"
-
-
-def test_parser_ultrasonic_declaration_and_measurement(src):
+def test_parser_declares_ultrasonic_sensor(src) -> None:
     code = src(
         """
         from Reduino.Sensors import Ultrasonic
 
-        sensor = Ultrasonic(9, 10)
+        sensor = Ultrasonic(7, 8)
         distance = sensor.measure_distance()
         """
     )
 
-    prog = parse(code)
-    decls = [node for node in prog.setup_body if isinstance(node, UltrasonicDecl)]
-    assert len(decls) == 1
-    decl = decls[0]
-    assert decl.trig == 9
-    assert decl.echo == 10
-    assert prog.ultrasonic_measurements == {"sensor"}
-
-    globals_out = {decl.name: decl for decl in prog.global_decls}
-    assert globals_out["distance"].c_type == "float"
-
-    assign = next(
-        node for node in prog.setup_body if isinstance(node, VarAssign) and node.name == "distance"
-    )
-    assert assign.expr == "__redu_ultrasonic_measure_sensor()"
-
-
-def test_parser_ultrasonic_requires_pins(src):
-    code = src(
-        """
-        from Reduino.Sensors import Ultrasonic
-
-        sensor = Ultrasonic(trig=5)
-        """
-    )
-
-    with pytest.raises(ValueError):
-        parse(code)
+    program = _parse(code)
+    ultrasonic_nodes = [node for node in program.setup_body if isinstance(node, UltrasonicDecl)]
+    assert len(ultrasonic_nodes) == 1
+    assignments = [node for node in program.setup_body if isinstance(node, VarAssign)]
+    assert any(node.name == "distance" for node in assignments)

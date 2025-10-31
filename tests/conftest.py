@@ -12,11 +12,11 @@ def deindent(code: str) -> str:
     return textwrap.dedent(code).strip("\n")
 
 
-def normalize_ws(s: str) -> str:
-    """Collapse excess whitespace for resilient textual comparisons."""
+def normalize_ws(text: str) -> str:
+    """Collapse runs of whitespace for resilient textual comparisons."""
 
-    lines = [re.sub(r"\s+", " ", ln).strip() for ln in s.strip().splitlines()]
-    return "\n".join(ln for ln in lines if ln)
+    lines = [re.sub(r"\s+", " ", ln).strip() for ln in text.strip().splitlines()]
+    return "\n".join(line for line in lines if line)
 
 
 @pytest.fixture
