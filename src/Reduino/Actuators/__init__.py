@@ -7,5 +7,6 @@ from Reduino.Time import Sleep
 __all__ = ["Sleep"]
 
 from .Led import Led
+from .RGBLed import RGBLed
 
-__all__ = [*__all__, "Led"]
+__all__ = [*__all__, "Led", "RGBLed"]
