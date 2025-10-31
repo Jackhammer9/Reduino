@@ -568,12 +568,34 @@ def _to_c_expr(
                 raise ValueError("unsupported attribute call")
 
             if attr == "read":
-                if n.args or n.keywords:
+                emit_mode = "both"
+
+                if n.args:
+                    if len(n.args) != 1 or n.keywords:
+                        raise ValueError("unsupported attribute call")
+                    arg = n.args[0]
+                    if not isinstance(arg, ast.Constant) or not isinstance(arg.value, str):
+                        raise ValueError("unsupported attribute call")
+                    emit_mode = arg.value
+                elif n.keywords:
+                    if len(n.keywords) != 1:
+                        raise ValueError("unsupported attribute call")
+                    keyword = n.keywords[0]
+                    if keyword.arg != "emit":
+                        raise ValueError("unsupported attribute call")
+                    if not isinstance(keyword.value, ast.Constant) or not isinstance(keyword.value.value, str):
+                        raise ValueError("unsupported attribute call")
+                    emit_mode = keyword.value.value
+
+                if emit_mode not in {"host", "mcu", "both"}:
                     raise ValueError("unsupported attribute call")
+
                 if isinstance(owner_node, ast.Name) and ctx is not None:
                     serials = ctx.get("serial_monitors", set())
                     if owner_node.id in serials:
-                        return "Serial.readStringUntil('\\n')"
+                        if emit_mode in {"both", "mcu"}:
+                            return "Serial.readStringUntil('\\n')"
+                        return '""'
                 raise ValueError("unsupported attribute call")
 
             raise ValueError("unsupported attribute call")
