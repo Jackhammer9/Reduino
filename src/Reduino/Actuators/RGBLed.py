@@ -92,7 +92,6 @@ class RGBLed:
         red: int,
         green: int,
         blue: int,
-        *,
         duration_ms: int | float = 1000,
         steps: int = 50,
     ) -> None:
@@ -130,7 +129,6 @@ class RGBLed:
         red: int,
         green: int,
         blue: int,
-        *,
         times: int = 1,
         delay_ms: int | float = 200,
     ) -> None:

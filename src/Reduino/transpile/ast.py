@@ -93,6 +93,67 @@ class LedFlashPattern:
 
 
 @dataclass
+class RGBLedDecl:
+    """Declare an RGB LED instance bound to three PWM pins."""
+
+    name: str
+    red_pin: Union[int, str]
+    green_pin: Union[int, str]
+    blue_pin: Union[int, str]
+
+
+@dataclass
+class RGBLedSetColor:
+    """Update the RGB LED to the provided colour components."""
+
+    name: str
+    red: Union[int, str]
+    green: Union[int, str]
+    blue: Union[int, str]
+
+
+@dataclass
+class RGBLedOn:
+    """Switch the RGB LED on using the provided colour intensities."""
+
+    name: str
+    red: Union[int, str]
+    green: Union[int, str]
+    blue: Union[int, str]
+
+
+@dataclass
+class RGBLedOff:
+    """Switch the RGB LED off."""
+
+    name: str
+
+
+@dataclass
+class RGBLedFade:
+    """Fade the RGB LED towards a colour over a duration."""
+
+    name: str
+    red: Union[int, str]
+    green: Union[int, str]
+    blue: Union[int, str]
+    duration_ms: Union[int, str]
+    steps: Union[int, str]
+
+
+@dataclass
+class RGBLedBlink:
+    """Blink the RGB LED with a colour and delay."""
+
+    name: str
+    red: Union[int, str]
+    green: Union[int, str]
+    blue: Union[int, str]
+    times: Union[int, str]
+    delay_ms: Union[int, str]
+
+
+@dataclass
 class Sleep:
     """Delay execution for ``ms`` milliseconds."""
 
