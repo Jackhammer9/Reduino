@@ -27,3 +27,9 @@ def test_sleep_uses_injected_callable():
     Sleep(500, sleep_func=fake_sleep)
 
     assert calls == [0.5]
+
+
+def test_sleep_accepts_float_duration():
+    calls: list[float] = []
+    Sleep(12.5, sleep_func=calls.append)
+    assert calls == [0.0125]
