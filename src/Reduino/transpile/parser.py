@@ -1030,6 +1030,30 @@ def _extract_call_argument(
     return ast.unparse(selected).strip()
 
 
+def _strip_inline_comment(text: str) -> str:
+    """Remove a trailing comment from ``text`` while respecting string literals."""
+
+    in_single = False
+    in_double = False
+    escaped = False
+    for index, char in enumerate(text):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == "'" and not in_double:
+            in_single = not in_single
+            continue
+        if char == '"' and not in_single:
+            in_double = not in_double
+            continue
+        if char == "#" and not in_single and not in_double:
+            return text[:index].rstrip()
+    return text
+
+
 def _annotation_to_type_label(annotation: Optional[ast.AST]) -> str:
     """Translate a Python annotation node into an internal type label."""
 
@@ -1902,7 +1926,11 @@ def _parse_simple_lines(
     i = 0
     while i < len(snippet):
         raw = snippet[i]
-        line = raw.strip()
+        stripped = _strip_inline_comment(raw)
+        line = stripped.strip()
+        if not line:
+            i += 1
+            continue
         if not line or line.startswith('#'):
             i += 1
             continue

@@ -77,6 +77,21 @@ def test_emit_rgb_led_updates_and_globals(norm):
     assert "analogWrite(5, __rgb_blue_rgb);" in cpp
 
 
+def test_emit_rgb_led_inline_comment_is_ignored(norm):
+    src = """
+    from Reduino.Actuators import RGBLed
+
+    led = RGBLed(3, 4, 5)
+    led.on(255, 0, 0)  # turn the LED red
+    """
+
+    cpp = emit(parse(src))
+
+    assert "analogWrite(3, __rgb_red_led);" in cpp
+    assert "analogWrite(4, __rgb_green_led);" in cpp
+    assert "analogWrite(5, __rgb_blue_led);" in cpp
+
+
 def test_emit_rgb_led_fade_and_blink(norm):
     src = """
     from Reduino.Actuators import RGBLed
