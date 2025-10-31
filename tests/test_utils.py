@@ -41,6 +41,13 @@ def test_serial_monitor_reads_from_serial_port(monkeypatch, capfd):
     assert capfd.readouterr().out == "hello world\n"
 
     assert monitor.read() == ""
+    assert capfd.readouterr().out == ""
+
+    assert monitor.read(emit="mcu") == ""
+    assert capfd.readouterr().out == ""
+
+    assert monitor.read("host") == "ignored"
+    assert capfd.readouterr().out == "ignored\n"
 
 
 def test_serial_monitor_requires_positive_baud():
@@ -54,3 +61,12 @@ def test_serial_monitor_requires_connection_before_read(monkeypatch):
 
     with pytest.raises(RuntimeError, match="No serial port configured"):
         monitor.read()
+
+
+def test_serial_monitor_rejects_invalid_emit(monkeypatch):
+    fake_serial = SimpleNamespace(Serial=object)
+    monkeypatch.setattr("Reduino.Utils.serial", fake_serial)
+    monitor = SerialMonitor()
+
+    with pytest.raises(ValueError, match="emit must be 'host', 'mcu', or 'both'"):
+        monitor.read("invalid")

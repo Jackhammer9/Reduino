@@ -285,6 +285,38 @@ def test_parser_serial_monitor_read_expression(src):
     assert any(assign.name == "message" and assign.expr == "Serial.readStringUntil('\\n')" for assign in assigns)
 
 
+def test_parser_serial_monitor_read_host_only(src):
+    code = src(
+        """
+        from Reduino.Utils import SerialMonitor
+
+        monitor = SerialMonitor()
+        payload = monitor.read("host")
+        """
+    )
+
+    prog = parse(code)
+
+    assigns = [node for node in prog.setup_body if isinstance(node, VarAssign)]
+    assert any(assign.name == "payload" and assign.expr == '""' for assign in assigns)
+
+
+def test_parser_serial_monitor_read_mcu_only(src):
+    code = src(
+        """
+        from Reduino.Utils import SerialMonitor
+
+        monitor = SerialMonitor()
+        payload = monitor.read(emit="mcu")
+        """
+    )
+
+    prog = parse(code)
+
+    assigns = [node for node in prog.setup_body if isinstance(node, VarAssign)]
+    assert any(assign.name == "payload" and assign.expr == "Serial.readStringUntil('\\n')" for assign in assigns)
+
+
 def test_parser_allows_led_pin_from_list_index(src):
     code = src("""
         from Reduino.Actuators import Led

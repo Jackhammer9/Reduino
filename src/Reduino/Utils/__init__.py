@@ -81,8 +81,15 @@ class SerialMonitor:
             self._serial.write(payload)
         return text
 
-    def read(self) -> str:
-        """Read the next message from the MCU and echo it to stdout."""
+    def read(self, emit: str = "both") -> str:
+        """Read the next message from the MCU and optionally echo it to stdout."""
+
+        if emit not in {"host", "mcu", "both"}:
+            raise ValueError("emit must be 'host', 'mcu', or 'both'")
+
+        host_enabled = emit in {"host", "both"}
+        if not host_enabled:
+            return ""
 
         if self._serial is None:
             raise RuntimeError("No serial port configured. Call connect() with a valid port first.")
