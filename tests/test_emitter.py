@@ -117,15 +117,15 @@ def test_emit_potentiometer_reads_analog_value(src, norm) -> None:
             """
             from Reduino.Sensors import Potentiometer
 
-            pot = Potentiometer(0)
+            pot = Potentiometer("A0")
             value = pot.read()
             """
         )
     )
 
     setup_section = cpp.split("void setup() {", 1)[1].split("void loop()", 1)[0]
-    assert "pinMode(0, INPUT);" in setup_section
-    assert "value = analogRead(0);" in cpp
+    assert "pinMode(A0, INPUT);" in setup_section
+    assert "value = analogRead(A0);" in cpp
 
 
 def test_emit_handles_led_and_rgb_led_actions(src, norm) -> None:

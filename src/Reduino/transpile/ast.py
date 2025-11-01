@@ -41,7 +41,7 @@ class PotentiometerDecl:
     """Declare an analogue potentiometer input bound to ``pin``."""
 
     name: str
-    pin: Union[int, str]
+    pin: str
 
 
 @dataclass

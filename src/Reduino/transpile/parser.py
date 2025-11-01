@@ -60,6 +60,8 @@ _CMP = {
     ast.GtE: ">=",
 }
 
+ANALOG_PIN_RE = re.compile(r"^A\d+$")
+
 
 def _escape_string_literal(value: str) -> str:
     """Escape a Python string literal into a C/C++ literal body."""
@@ -600,8 +602,7 @@ def _to_c_expr(
                         pin_value = pins.get(owner_node.id)
                         if pin_value is None:
                             raise ValueError("unsupported attribute call")
-                        pin_expr = pin_value if isinstance(pin_value, str) else str(pin_value)
-                        return f"analogRead({pin_expr})"
+                        return f"analogRead({pin_value})"
 
                 emit_mode = "both"
 
@@ -2052,23 +2053,30 @@ def _parse_simple_lines(
             if pin_arg is None or not pin_arg.strip():
                 raise ValueError("Potentiometer requires a pin argument")
 
-            def _resolve_pot_pin(src_text: str) -> Union[int, str]:
+            def _resolve_pot_pin(src_text: str) -> str:
                 text = src_text.strip()
                 try:
                     expr_ast = ast.parse(text, mode="eval").body
-                except Exception:
-                    expr_ast = None
-                if expr_ast is not None and not _expr_has_name(expr_ast):
-                    try:
-                        value = _eval_const(text, vars)
-                    except Exception:
-                        pass
-                    else:
-                        if isinstance(value, bool):
-                            return 1 if value else 0
-                        if isinstance(value, (int, float)):
-                            return int(value)
-                return _to_c_expr(text, vars, ctx)
+                except Exception as exc:  # pragma: no cover - defensive
+                    raise ValueError(
+                        "Potentiometer pin must be an analogue pin literal like A0"
+                    ) from exc
+
+                candidate: Optional[str]
+                if isinstance(expr_ast, ast.Constant) and isinstance(expr_ast.value, str):
+                    candidate = expr_ast.value
+                elif isinstance(expr_ast, ast.Name):
+                    candidate = expr_ast.id
+                else:
+                    raise ValueError(
+                        "Potentiometer pin must be an analogue pin literal like A0"
+                    )
+
+                if not ANALOG_PIN_RE.fullmatch(candidate.strip()):
+                    raise ValueError(
+                        "Potentiometer pin must be an analogue pin literal like A0"
+                    )
+                return candidate.strip()
 
             pin_value = _resolve_pot_pin(pin_arg)
 

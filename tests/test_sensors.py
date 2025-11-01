@@ -100,25 +100,26 @@ def test_button_validates_pin_type() -> None:
 
 
 def test_potentiometer_defaults_to_zero() -> None:
-    pot = Potentiometer(0)
+    pot = Potentiometer("A0")
     assert pot.read() == 0
-    pot.set_value(512)
-    assert pot.read() == 512
 
 
 def test_potentiometer_uses_provider() -> None:
-    pot = Potentiometer(1, value_provider=lambda: 900)
+    pot = Potentiometer("A1", value_provider=lambda: 900)
     assert pot.read() == 900
 
 
-def test_potentiometer_validates_values() -> None:
-    pot = Potentiometer(2)
+def test_potentiometer_validates_provider_values() -> None:
+    pot = Potentiometer("A2", value_provider=lambda: 2048)
     with pytest.raises(ValueError):
-        pot.set_value(2048)
-    with pytest.raises(ValueError):
-        Potentiometer(3, default_value=-1)
+        pot.read()
 
 
 def test_potentiometer_validates_pin_type() -> None:
     with pytest.raises(TypeError):
-        Potentiometer("A0")  # type: ignore[arg-type]
+        Potentiometer(0)  # type: ignore[arg-type]
+
+
+def test_potentiometer_validates_pin_format() -> None:
+    with pytest.raises(ValueError):
+        Potentiometer("D3")
