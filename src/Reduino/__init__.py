@@ -8,10 +8,54 @@ __version__ = "0.0.3"
 import pathlib
 import sys
 import tempfile
+from typing import List, Type
 
 from Reduino.toolchain.pio import compile_upload, ensure_pio, write_project
+from Reduino.transpile.ast import Program, ServoDecl
 from Reduino.transpile.emitter import emit
 from Reduino.transpile.parser import parse
+
+
+def _program_contains(program: Program, node_type: Type[object]) -> bool:
+    """Recursively determine whether ``program`` includes ``node_type``."""
+
+    seen: set[int] = set()
+
+    def _visit(value: object) -> bool:
+        if isinstance(value, node_type):
+            return True
+        if isinstance(value, (str, bytes, bytearray)):
+            return False
+        if isinstance(value, (list, tuple, set)):
+            for item in value:
+                if _visit(item):
+                    return True
+            return False
+        if isinstance(value, dict):
+            for item in value.values():
+                if _visit(item):
+                    return True
+            return False
+        if hasattr(value, "__dict__"):
+            key = id(value)
+            if key in seen:
+                return False
+            seen.add(key)
+            for attr_value in value.__dict__.values():
+                if _visit(attr_value):
+                    return True
+        return False
+
+    return _visit(program)
+
+
+def _collect_required_libraries(program: Program) -> List[str]:
+    """Return PlatformIO libraries required by the transpiled program."""
+
+    requirements: List[str] = []
+    if _program_contains(program, ServoDecl):
+        requirements.append("Servo")
+    return requirements
 
 
 def target(port: str, *, upload: bool = True) -> None:
@@ -32,10 +76,18 @@ def target(port: str, *, upload: bool = True) -> None:
 
     main_file = pathlib.Path(sys.modules["__main__"].__file__)
     src = main_file.read_text(encoding="utf-8")
-    cpp = emit(parse(src))
+    program = parse(src)
+    required_libs = _collect_required_libraries(program)
+    if "Servo" in required_libs:
+        print(
+            "Reduino: Servo support requires the PlatformIO Servo library. "
+            "PlatformIO will download it automatically if it's missing.",
+            file=sys.stderr,
+        )
+    cpp = emit(program)
 
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="reduino-pio-"))
-    write_project(tmp, cpp, port=port)
+    write_project(tmp, cpp, port=port, lib_deps=required_libs)
     if upload:
         compile_upload(tmp)
 
