@@ -6,6 +6,8 @@ import pytest
 
 from Reduino.transpile.ast import (
     BreakStmt,
+    ButtonDecl,
+    ButtonPoll,
     ForRangeLoop,
     FunctionDef,
     LedDecl,
@@ -257,3 +259,69 @@ def test_parser_declares_ultrasonic_sensor(src) -> None:
     assert len(ultrasonic_nodes) == 1
     assignments = [node for node in program.setup_body if isinstance(node, VarAssign)]
     assert any(node.name == "distance" for node in assignments)
+
+
+def test_parser_records_button_declaration_and_poll(src) -> None:
+    code = src(
+        """
+        from Reduino.Sensors import Button
+
+        def on_press():
+            pass
+
+        button = Button(2, on_click=on_press)
+        """
+    )
+
+    program = _parse(code)
+
+    button_decls = [node for node in program.setup_body if isinstance(node, ButtonDecl)]
+    assert len(button_decls) == 1
+    assert button_decls[0].name == "button"
+    assert button_decls[0].pin == 2
+    assert button_decls[0].on_click == "on_press"
+
+    polls = [node for node in program.loop_body if isinstance(node, ButtonPoll)]
+    assert [node.name for node in polls] == ["button"]
+
+
+def test_parser_button_is_pressed_uses_cached_value(src) -> None:
+    code = src(
+        """
+        from Reduino.Sensors import Button
+
+        btn = Button(3)
+        pressed = btn.is_pressed()
+        """
+    )
+
+    program = _parse(code)
+
+    assigns = [node for node in program.setup_body if isinstance(node, VarAssign)]
+    assert any(
+        node.name == "pressed" and "__redu_button_value_btn" in node.expr
+        for node in assigns
+    )
+
+
+def test_parser_does_not_promote_while_true_when_button_present(src) -> None:
+    code = src(
+        """
+        from Reduino.Actuators import Led
+        from Reduino.Sensors import Button
+
+        led = Led()
+        btn = Button(4)
+
+        while True:
+            led.toggle()
+        """
+    )
+
+    program = _parse(code)
+
+    polls = [node for node in program.loop_body if isinstance(node, ButtonPoll)]
+    assert polls and polls[0].name == "btn"
+
+    while_loops = [node for node in program.setup_body if isinstance(node, WhileLoop)]
+    assert while_loops, "while True should remain in setup when a button exists"

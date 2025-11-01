@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from .ast import (
     BreakStmt,
+    ButtonDecl,
+    ButtonPoll,
     CatchClause,
     ConditionalBranch,
     ExprStmt,
@@ -571,6 +573,20 @@ def _to_c_expr(
                         )
                         measure_calls.add(owner_node.id)
                         return f"__redu_ultrasonic_measure_{owner_node.id}()"
+                raise ValueError("unsupported attribute call")
+
+            if attr == "is_pressed":
+                if n.args or n.keywords:
+                    raise ValueError("unsupported attribute call")
+                if isinstance(owner_node, ast.Name) and ctx is not None:
+                    buttons = ctx.get("button_names", set())
+                    if owner_node.id in buttons:
+                        poll_names: Set[str] = ctx.setdefault(
+                            "button_poll_names", set()
+                        )
+                        poll_names.add(owner_node.id)
+                        ctx["button_force_loop"] = True
+                        return f"(__redu_button_value_{owner_node.id} ? 1 : 0)"
                 raise ValueError("unsupported attribute call")
 
             if attr == "read":
@@ -1137,12 +1153,14 @@ RE_IMPORT_SLEEP   = re.compile(r"^\s*from\s+Reduino\.Time\s+import\s+Sleep\s*$")
 RE_IMPORT_SERIAL  = re.compile(r"^\s*from\s+Reduino\.Utils\s+import\s+SerialMonitor\s*$")
 RE_IMPORT_TARGET  = re.compile(r"^\s*from\s+Reduino\s+import\s+target\s*$")
 RE_IMPORT_ULTRASONIC = re.compile(r"^\s*from\s+Reduino\.Sensors\s+import\s+Ultrasonic\s*$")
+RE_IMPORT_BUTTON  = re.compile(r"^\s*from\s+Reduino\.Sensors\s+import\s+Button\s*$")
 
 # Led Primitives
 RE_ASSIGN     = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*(.+)$")
 RE_LED_DECL   = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Led\s*\(\s*(.*?)\s*\)\s*$")
 RE_RGB_LED_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*RGBLed\s*\(\s*(.*?)\s*\)\s*$")
 RE_ULTRASONIC_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Ultrasonic\s*\(\s*(.*?)\s*\)\s*$")
+RE_BUTTON_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Button\s*\(\s*(.*?)\s*\)\s*$")
 RE_LED_ON         = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.on\(\s*\)\s*$")
 RE_LED_OFF        = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.off\(\s*\)\s*$")
 RE_LED_TOGGLE     = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.toggle\(\s*\)\s*$")
@@ -1903,6 +1921,10 @@ def _parse_simple_lines(
     ctx.setdefault("functions", {})
     list_info = ctx.setdefault("list_info", {})
     rgb_led_names = ctx.setdefault("rgb_led_names", set())
+    button_names = ctx.setdefault("button_names", set())
+    button_pins = ctx.setdefault("button_pins", {})
+    button_callbacks = ctx.setdefault("button_callbacks", {})
+    button_poll_names = ctx.setdefault("button_poll_names", set())
 
     def _resolve_numeric_arg(arg_src: Optional[str], default: Union[int, str]) -> Union[int, str]:
         if arg_src is None or not arg_src.strip():
@@ -1943,6 +1965,7 @@ def _parse_simple_lines(
             or RE_IMPORT_SERIAL.match(line)
             or RE_IMPORT_TARGET.match(line)
             or RE_IMPORT_ULTRASONIC.match(line)
+            or RE_IMPORT_BUTTON.match(line)
         ):
             i += 1
             continue
@@ -1998,6 +2021,70 @@ def _parse_simple_lines(
         inline_matches = list(RE_TARGET_INLINE.finditer(line))
         if inline_matches:
             ctx["target_port"] = inline_matches[-1].group(1)
+            i += 1
+            continue
+
+        m = RE_BUTTON_DECL.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            pin_arg = _extract_call_argument(args_src, keyword="pin")
+            if pin_arg is None:
+                pin_arg = _extract_call_argument(args_src)
+            if pin_arg is None or not pin_arg.strip():
+                raise ValueError("Button requires a pin argument")
+
+            def _resolve_button_pin(src_text: str) -> Union[int, str]:
+                text = src_text.strip()
+                try:
+                    expr_ast = ast.parse(text, mode="eval").body
+                except Exception:
+                    expr_ast = None
+                if expr_ast is not None and not _expr_has_name(expr_ast):
+                    try:
+                        value = _eval_const(text, vars)
+                    except Exception:
+                        pass
+                    else:
+                        if isinstance(value, bool):
+                            return 1 if value else 0
+                        if isinstance(value, (int, float)):
+                            return int(value)
+                return _to_c_expr(text, vars, ctx)
+
+            pin_value = _resolve_button_pin(pin_arg)
+
+            on_click_arg = _extract_call_argument(args_src, keyword="on_click")
+            if on_click_arg is None:
+                on_click_arg = _extract_call_argument(args_src, position=1)
+
+            callback_name: Optional[str] = None
+            if on_click_arg is not None and on_click_arg.strip():
+                candidate = on_click_arg.strip()
+                try:
+                    expr_ast = ast.parse(candidate, mode="eval").body
+                except Exception as exc:
+                    raise ValueError("on_click must reference a function name or None") from exc
+                if isinstance(expr_ast, ast.Constant) and expr_ast.value is None:
+                    callback_name = None
+                elif isinstance(expr_ast, ast.Name):
+                    callback_name = expr_ast.id
+                else:
+                    raise ValueError("on_click must reference a function name or None")
+
+            button_names.add(name)
+            button_pins[name] = pin_value
+            if callback_name is not None:
+                button_callbacks[name] = callback_name
+            vars[name] = _ExprStr(name)
+            button_poll_names.add(name)
+            ctx["button_force_loop"] = True
+            body.append(
+                ButtonDecl(
+                    name=name,
+                    pin=pin_value,
+                    on_click=callback_name,
+                )
+            )
             i += 1
             continue
 
@@ -2933,6 +3020,11 @@ def parse(src: str) -> Program:
         "ultrasonic_measure_calls": set(),
         "ultrasonic_names": set(),
         "ultrasonic_models": {},
+        "button_names": set(),
+        "button_pins": {},
+        "button_callbacks": {},
+        "button_poll_names": set(),
+        "button_force_loop": False,
     }
     ctx["vars"]["_helpers"] = ctx["helpers"]
 
@@ -2962,11 +3054,16 @@ def parse(src: str) -> Program:
             or RE_IMPORT_SERIAL.match(text)
             or RE_IMPORT_TARGET.match(text)
             or RE_IMPORT_ULTRASONIC.match(text)
+            or RE_IMPORT_BUTTON.match(text)
         ):
             i += 1; continue
 
         # controls
-        if _indent_of(raw) == 0 and RE_WHILE_TRUE.match(text):
+        if (
+            _indent_of(raw) == 0
+            and RE_WHILE_TRUE.match(text)
+            and not ctx.get("button_force_loop", False)
+        ):
             block, i = _collect_block(lines, i)
             loop_body.extend(
                 _parse_simple_lines(
@@ -3085,6 +3182,13 @@ def parse(src: str) -> Program:
                 keep.append(first_sig)
         for sig in keep:
             selected_functions.append(variants[sig])
+
+    button_polls = [
+        ButtonPoll(name=name)
+        for name in sorted(ctx.get("button_poll_names", set()))
+    ]
+    if button_polls:
+        loop_body = button_polls + loop_body
 
     return Program(
         setup_body=setup_body,
