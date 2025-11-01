@@ -179,6 +179,34 @@ class RGBLedBlink:
 
 
 @dataclass
+class ServoDecl:
+    """Declare a hobby servo bound to ``pin`` with optional calibration."""
+
+    name: str
+    pin: Union[int, str] = 9
+    min_angle: Union[float, int, str] = 0.0
+    max_angle: Union[float, int, str] = 180.0
+    min_pulse_us: Union[float, int, str] = 544.0
+    max_pulse_us: Union[float, int, str] = 2400.0
+
+
+@dataclass
+class ServoWrite:
+    """Command the servo to move to an angle in degrees."""
+
+    name: str
+    angle: Union[float, int, str]
+
+
+@dataclass
+class ServoWriteMicroseconds:
+    """Command the servo using a pulse width in microseconds."""
+
+    name: str
+    pulse_us: Union[float, int, str]
+
+
+@dataclass
 class Sleep:
     """Delay execution for ``ms`` milliseconds."""
 

@@ -8,5 +8,6 @@ __all__ = ["sleep"]
 
 from .Led import Led
 from .RGBLed import RGBLed
+from .Servo import Servo
 
-__all__ = [*__all__, "Led", "RGBLed"]
+__all__ = [*__all__, "Led", "RGBLed", "Servo"]

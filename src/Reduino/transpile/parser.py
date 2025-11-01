@@ -32,6 +32,9 @@ from .ast import (
     RGBLedOff,
     RGBLedOn,
     RGBLedSetColor,
+    ServoDecl,
+    ServoWrite,
+    ServoWriteMicroseconds,
     Program,
     ReturnStmt,
     SerialMonitorDecl,
@@ -594,6 +597,12 @@ def _to_c_expr(
 
             if attr == "read":
                 if isinstance(owner_node, ast.Name) and ctx is not None:
+                    servo_names = ctx.get("servo_names", set())
+                    if owner_node.id in servo_names:
+                        if n.args or n.keywords:
+                            raise ValueError("unsupported attribute call")
+                        return f"__servo_angle_{owner_node.id}"
+                if isinstance(owner_node, ast.Name) and ctx is not None:
                     potentiometers = ctx.get("potentiometer_names", set())
                     if owner_node.id in potentiometers:
                         if n.args or n.keywords:
@@ -632,6 +641,15 @@ def _to_c_expr(
                         if emit_mode in {"both", "mcu"}:
                             return "Serial.readStringUntil('\\n')"
                         return ''
+                raise ValueError("unsupported attribute call")
+
+            if attr == "read_us":
+                if isinstance(owner_node, ast.Name) and ctx is not None:
+                    servo_names = ctx.get("servo_names", set())
+                    if owner_node.id in servo_names:
+                        if n.args or n.keywords:
+                            raise ValueError("unsupported attribute call")
+                        return f"__servo_pulse_{owner_node.id}"
                 raise ValueError("unsupported attribute call")
 
             raise ValueError("unsupported attribute call")
@@ -880,13 +898,25 @@ def _infer_expr_type(
             led_names = ctx.get("led_names", set())
             if owner.id in led_names:
                 return "int"
-            
+
         if attr == "read" and isinstance(owner, ast.Name):
+            if ctx is None:
+                return "float"
+            servo_names = ctx.get("servo_names", set())
+            if owner.id in servo_names:
+                return "float"
             if ctx is None:
                 return "String"
             serials = ctx.get("serial_monitors", set())
             if owner.id in serials:
                 return "String"
+
+        if attr == "read_us" and isinstance(owner, ast.Name):
+            if ctx is None:
+                return "float"
+            servo_names = ctx.get("servo_names", set())
+            if owner.id in servo_names:
+                return "float"
 
         if attr == "measure_distance" and isinstance(owner, ast.Name):
             if ctx is None:
@@ -1163,6 +1193,7 @@ def _merge_return_types(types: List[str], has_void: bool) -> str:
 # Imports to ignore
 RE_IMPORT_LED     = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+Led\s*$")
 RE_IMPORT_RGB_LED = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+RGBLed\s*$")
+RE_IMPORT_SERVO   = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+Servo\s*$")
 RE_IMPORT_SLEEP   = re.compile(r"^\s*from\s+Reduino\.Utils\s+import\s+sleep\s*$")
 RE_IMPORT_SERIAL  = re.compile(r"^\s*from\s+Reduino\.Communication\s+import\s+SerialMonitor\s*$")
 RE_IMPORT_TARGET  = re.compile(r"^\s*from\s+Reduino\s+import\s+target\s*$")
@@ -1176,6 +1207,7 @@ RE_IMPORT_POTENTIOMETER = re.compile(
 RE_ASSIGN     = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*(.+)$")
 RE_LED_DECL   = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Led\s*\(\s*(.*?)\s*\)\s*$")
 RE_RGB_LED_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*RGBLed\s*\(\s*(.*?)\s*\)\s*$")
+RE_SERVO_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Servo\s*\(\s*(.*?)\s*\)\s*$")
 RE_ULTRASONIC_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Ultrasonic\s*\(\s*(.*?)\s*\)\s*$")
 RE_BUTTON_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Button\s*\(\s*(.*?)\s*\)\s*$")
 RE_POTENTIOMETER_DECL = re.compile(
@@ -1194,6 +1226,8 @@ RE_RGB_LED_OFF       = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.off\(\s*\)\s*$")
 RE_RGB_LED_SET_COLOR = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.set_color\(\s*(.*)\s*\)\s*$")
 RE_RGB_LED_FADE      = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.fade\(\s*(.*)\s*\)\s*$")
 RE_RGB_LED_BLINK     = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.blink\(\s*(.*)\s*\)\s*$")
+RE_SERVO_WRITE       = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.write\(\s*(.*)\s*\)\s*$")
+RE_SERVO_WRITE_US    = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.write_us\(\s*(.*)\s*\)\s*$")
 
 # Serial primitives
 RE_SERIAL_DECL    = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*SerialMonitor\s*\(\s*(.*?)\s*\)\s*$")
@@ -1498,6 +1532,9 @@ def _handle_assignment_ast(
     def is_rgb_led_call(n: ast.AST) -> bool:
         return isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "RGBLed"
 
+    def is_servo_call(n: ast.AST) -> bool:
+        return isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "Servo"
+
     def is_serial_monitor_call(n: ast.AST) -> bool:
         return (
             isinstance(n, ast.Call)
@@ -1511,6 +1548,7 @@ def _handle_assignment_ast(
     if isinstance(target, ast.Name) and (
         is_led_call(value)
         or is_rgb_led_call(value)
+        or is_servo_call(value)
         or is_serial_monitor_call(value)
         or is_ultrasonic_call(value)
     ):
@@ -1519,6 +1557,7 @@ def _handle_assignment_ast(
         if any(
             is_led_call(elt)
             or is_rgb_led_call(elt)
+            or is_servo_call(elt)
             or is_serial_monitor_call(elt)
             or is_ultrasonic_call(elt)
             for elt in value.elts
@@ -1941,6 +1980,7 @@ def _parse_simple_lines(
     ctx.setdefault("functions", {})
     list_info = ctx.setdefault("list_info", {})
     rgb_led_names = ctx.setdefault("rgb_led_names", set())
+    servo_names = ctx.setdefault("servo_names", set())
     button_names = ctx.setdefault("button_names", set())
     button_pins = ctx.setdefault("button_pins", {})
     button_callbacks = ctx.setdefault("button_callbacks", {})
@@ -1965,6 +2005,27 @@ def _parse_simple_lines(
                     return int(value)
         return _to_c_expr(arg_src, vars, ctx)
 
+    def _resolve_float_arg(
+        arg_src: Optional[str], default: Union[float, int, str]
+    ) -> Union[float, int, str]:
+        if arg_src is None or not arg_src.strip():
+            return default
+        try:
+            expr_ast = ast.parse(arg_src, mode="eval").body
+        except Exception:
+            expr_ast = None
+        if expr_ast is not None and not _expr_has_name(expr_ast):
+            try:
+                value = _eval_const(arg_src, vars)
+            except Exception:
+                pass
+            else:
+                if isinstance(value, bool):
+                    return 1.0 if value else 0.0
+                if isinstance(value, (int, float)):
+                    return float(value)
+        return _to_c_expr(arg_src, vars, ctx)
+
     i = 0
     while i < len(snippet):
         raw = snippet[i]
@@ -1981,6 +2042,7 @@ def _parse_simple_lines(
         if (
             RE_IMPORT_LED.match(line)
             or RE_IMPORT_RGB_LED.match(line)
+            or RE_IMPORT_SERVO.match(line)
             or RE_IMPORT_SLEEP.match(line)
             or RE_IMPORT_SERIAL.match(line)
             or RE_IMPORT_TARGET.match(line)
@@ -2566,6 +2628,72 @@ def _parse_simple_lines(
             i += 1
             continue
 
+        m = RE_SERVO_DECL.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            pin_arg = _extract_call_argument(args_src, keyword="pin")
+            if pin_arg is None:
+                pin_arg = _extract_call_argument(args_src)
+            pin_value: Union[int, str] = 9
+            if pin_arg and pin_arg.strip():
+                handled = False
+                try:
+                    expr_ast = ast.parse(pin_arg, mode="eval").body
+                except Exception:
+                    expr_ast = None
+                if expr_ast is not None and not _expr_has_name(expr_ast):
+                    try:
+                        value = _eval_const(pin_arg, vars)
+                    except Exception:
+                        pass
+                    else:
+                        if isinstance(value, bool):
+                            pin_value = 1 if value else 0
+                            handled = True
+                        elif isinstance(value, (int, float)):
+                            pin_value = int(value)
+                            handled = True
+                if not handled:
+                    pin_value = _to_c_expr(pin_arg, vars, ctx)
+
+            min_angle_arg = _extract_call_argument(args_src, keyword="min_angle")
+            max_angle_arg = _extract_call_argument(args_src, keyword="max_angle")
+            min_pulse_arg = _extract_call_argument(args_src, keyword="min_pulse_us")
+            max_pulse_arg = _extract_call_argument(args_src, keyword="max_pulse_us")
+
+            min_angle = _resolve_float_arg(min_angle_arg, 0.0)
+            max_angle = _resolve_float_arg(max_angle_arg, 180.0)
+            min_pulse = _resolve_numeric_arg(min_pulse_arg, 544)
+            max_pulse = _resolve_numeric_arg(max_pulse_arg, 2400)
+
+            if (
+                isinstance(min_angle, (int, float))
+                and isinstance(max_angle, (int, float))
+                and float(min_angle) >= float(max_angle)
+            ):
+                raise ValueError("min_angle must be smaller than max_angle")
+            if (
+                isinstance(min_pulse, int)
+                and isinstance(max_pulse, int)
+                and min_pulse >= max_pulse
+            ):
+                raise ValueError("min_pulse_us must be smaller than max_pulse_us")
+
+            servo_names.add(name)
+            vars[name] = _ExprStr(name)
+            body.append(
+                ServoDecl(
+                    name=name,
+                    pin=pin_value,
+                    min_angle=min_angle,
+                    max_angle=max_angle,
+                    min_pulse_us=min_pulse,
+                    max_pulse_us=max_pulse,
+                )
+            )
+            i += 1
+            continue
+
         m = RE_RGB_LED_DECL.match(line)
         if m:
             name, args_src = m.group(1), m.group(2)
@@ -2954,6 +3082,36 @@ def _parse_simple_lines(
             body.append(LedFlashPattern(name=name, pattern=pattern_values, delay_ms=delay_val))
             i += 1
             continue
+
+        m = RE_SERVO_WRITE.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in servo_names:
+                angle_arg = _extract_call_argument(args_src, keyword="angle")
+                if angle_arg is None:
+                    angle_arg = _extract_call_argument(args_src)
+                if angle_arg is None or not angle_arg.strip():
+                    raise ValueError("Servo.write requires an angle argument")
+                angle_expr = _to_c_expr(angle_arg, vars, ctx)
+                body.append(ServoWrite(name=name, angle=angle_expr))
+                i += 1
+                continue
+
+        m = RE_SERVO_WRITE_US.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in servo_names:
+                pulse_arg = _extract_call_argument(args_src, keyword="pulse_us")
+                if pulse_arg is None:
+                    pulse_arg = _extract_call_argument(args_src, keyword="pulse")
+                if pulse_arg is None:
+                    pulse_arg = _extract_call_argument(args_src)
+                if pulse_arg is None or not pulse_arg.strip():
+                    raise ValueError("Servo.write_us requires a pulse argument")
+                pulse_expr = _to_c_expr(pulse_arg, vars, ctx)
+                body.append(ServoWriteMicroseconds(name=name, pulse_us=pulse_expr))
+                i += 1
+                continue
 
         m = RE_SERIAL_WRITE.match(line)
         if m:

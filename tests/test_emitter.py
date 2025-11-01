@@ -163,6 +163,33 @@ def test_emit_handles_led_and_rgb_led_actions(src, norm) -> None:
     assert "analogWrite(5, __rgb_blue_rgb);" in cpp
 
 
+def test_emit_servo_support(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Actuators import Servo
+
+            servo = Servo(9, min_angle=10, max_angle=170, min_pulse_us=500, max_pulse_us=2500)
+            servo.write(45)
+            servo.write_us(1500)
+            angle = servo.read()
+            pulse = servo.read_us()
+            """
+        )
+    )
+
+    text = norm(cpp)
+    assert "#include <Servo.h>" in cpp
+    assert "Servo __servo_servo;" in cpp
+    assert "float __servo_min_angle_servo" in cpp
+    assert "__servo_servo.attach(9, static_cast<int>(500), static_cast<int>(2500));" in cpp
+    assert "__servo_servo.writeMicroseconds(static_cast<int>(500));" in cpp
+    assert "float __redu_angle = static_cast<float>(45);" in cpp
+    assert "angle = __servo_angle_servo;" in cpp
+    assert "pulse = __servo_pulse_servo;" in cpp
+    assert text.count("__servo_servo.writeMicroseconds") >= 3
+
+
 def test_emit_serial_monitor_and_variables(src, norm) -> None:
     cpp = compile_source(
         src(
