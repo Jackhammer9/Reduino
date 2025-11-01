@@ -650,7 +650,7 @@ def _emit_block(
             )
             lines.append(f"{indent}  {pulse_var} = __redu_pulse;")
             lines.append(
-                f"{indent}  {servo_obj}.writeMicroseconds(static_cast<int>({pulse_var} + 0.5f));"
+                f"{indent}  {servo_obj}.write(static_cast<int>(__redu_angle + 0.5f));"
             )
             lines.append(f"{indent}}}")
             continue

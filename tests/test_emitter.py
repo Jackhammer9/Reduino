@@ -187,7 +187,8 @@ def test_emit_servo_support(src, norm) -> None:
     assert "float __redu_angle = static_cast<float>(45);" in cpp
     assert "angle = __servo_angle_servo;" in cpp
     assert "pulse = __servo_pulse_servo;" in cpp
-    assert text.count("__servo_servo.writeMicroseconds") >= 3
+    assert "__servo_servo.write(static_cast<int>(__redu_angle + 0.5f));" in cpp
+    assert text.count("__servo_servo.writeMicroseconds") >= 2
 
 
 def test_emit_serial_monitor_and_variables(src, norm) -> None:
