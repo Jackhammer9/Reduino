@@ -20,6 +20,23 @@ class Program:
 
 
 @dataclass
+class ButtonDecl:
+    """Declare a button input bound to ``pin`` with an optional callback."""
+
+    name: str
+    pin: Union[int, str]
+    on_click: Optional[str] = None
+    mode: str = "INPUT_PULLUP"
+
+
+@dataclass
+class ButtonPoll:
+    """Poll a button input and dispatch its callback when pressed."""
+
+    name: str
+
+
+@dataclass
 class LedDecl:
     """Declare an LED instance bound to ``pin``."""
 

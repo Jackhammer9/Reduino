@@ -6,6 +6,8 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 
 from .ast import (
     BreakStmt,
+    ButtonDecl,
+    ButtonPoll,
     ExprStmt,
     ForRangeLoop,
     FunctionDef,
@@ -19,19 +21,19 @@ from .ast import (
     LedOn,
     LedSetBrightness,
     LedToggle,
+    Program,
     RGBLedBlink,
     RGBLedDecl,
     RGBLedFade,
     RGBLedOff,
     RGBLedOn,
     RGBLedSetColor,
-    Program,
     ReturnStmt,
     SerialMonitorDecl,
     SerialWrite,
     Sleep,
-    UltrasonicDecl,
     TryStatement,
+    UltrasonicDecl,
     VarAssign,
     VarDecl,
     WhileLoop,
@@ -216,6 +218,7 @@ def _emit_block(
     rgb_led_state: Dict[str, str],
     rgb_led_colors: Dict[str, Tuple[str, str, str]],
     ultrasonic_decls: Dict[str, UltrasonicDecl],
+    button_decls: Dict[str, ButtonDecl],
     indent: str = "  ",
     *,
     in_setup: bool = False,
@@ -239,6 +242,7 @@ def _emit_block(
                     rgb_led_state,
                     rgb_led_colors,
                     ultrasonic_decls,
+                    button_decls,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
@@ -246,6 +250,28 @@ def _emit_block(
                 )
             )
             lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, ButtonDecl):
+            continue
+
+        if isinstance(node, ButtonPoll):
+            decl = button_decls.get(node.name)
+            if decl is None:
+                continue
+            pin_expr = _emit_expr(decl.pin)
+            next_var = f"__redu_button_next_{node.name}"
+            prev_var = f"__redu_button_prev_{node.name}"
+            value_var = f"__redu_button_value_{node.name}"
+            lines.append(
+                f"{indent}bool {next_var} = (digitalRead({pin_expr}) == HIGH);"
+            )
+            if decl.on_click:
+                lines.append(f"{indent}if ({next_var} && !{prev_var}) {{")
+                lines.append(f"{indent}  {decl.on_click}();")
+                lines.append(f"{indent}}}")
+            lines.append(f"{indent}{prev_var} = {next_var};")
+            lines.append(f"{indent}{value_var} = {next_var};")
             continue
 
         if isinstance(node, IfStatement):
@@ -262,6 +288,7 @@ def _emit_block(
                         rgb_led_state,
                         rgb_led_colors,
                         ultrasonic_decls,
+                        button_decls,
                         indent + "  ",
                         in_setup=in_setup,
                         emitted_pin_modes=emitted_pin_modes,
@@ -281,6 +308,7 @@ def _emit_block(
                         rgb_led_state,
                         rgb_led_colors,
                         ultrasonic_decls,
+                        button_decls,
                         indent + "  ",
                         in_setup=in_setup,
                         emitted_pin_modes=emitted_pin_modes,
@@ -302,6 +330,7 @@ def _emit_block(
                     rgb_led_state,
                     rgb_led_colors,
                     ultrasonic_decls,
+                    button_decls,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
@@ -325,6 +354,7 @@ def _emit_block(
                     rgb_led_state,
                     rgb_led_colors,
                     ultrasonic_decls,
+                    button_decls,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
@@ -346,6 +376,7 @@ def _emit_block(
                     rgb_led_state,
                     rgb_led_colors,
                     ultrasonic_decls,
+                    button_decls,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
@@ -374,6 +405,7 @@ def _emit_block(
                         rgb_led_state,
                         rgb_led_colors,
                         ultrasonic_decls,
+                        button_decls,
                         indent + "  ",
                         in_setup=in_setup,
                         emitted_pin_modes=emitted_pin_modes,
@@ -863,6 +895,8 @@ def emit(ast: Program) -> str:
     ultrasonic_decls: Dict[str, UltrasonicDecl] = {}
     ultrasonic_pin_modes: Set[Tuple[str, str, str]] = set()
     loop_ultrasonic_modes: Set[Tuple[str, str, str]] = set()
+    button_decls: Dict[str, ButtonDecl] = {}
+    button_init_emitted: Set[str] = set()
 
     for decl in getattr(ast, "global_decls", []):
         line = f"{decl.c_type} {decl.name} = {decl.expr};"
@@ -880,6 +914,29 @@ def emit(ast: Program) -> str:
     pin_mode_emitted: Set[Tuple[str, ...]] = set()
 
     for node in (setup_body or []):
+        if isinstance(node, ButtonDecl):
+            button_decls[node.name] = node
+            prev_var = f"__redu_button_prev_{node.name}"
+            value_var = f"__redu_button_value_{node.name}"
+            prev_line = f"bool {prev_var} = false;"
+            value_line = f"bool {value_var} = false;"
+            if prev_line not in globals_:
+                globals_.append(prev_line)
+            if value_line not in globals_:
+                globals_.append(value_line)
+            if node.name not in button_init_emitted:
+                pin_expr = _emit_expr(node.pin)
+                key = (node.name, pin_expr, node.mode)
+                if key not in pin_mode_emitted:
+                    pin_mode_emitted.add(key)
+                    setup_lines.append(f"  pinMode({pin_expr}, {node.mode});")
+                setup_lines.append(
+                    f"  {prev_var} = (digitalRead({pin_expr}) == HIGH);"
+                )
+                setup_lines.append(f"  {value_var} = {prev_var};")
+                button_init_emitted.add(node.name)
+            continue
+
         if isinstance(node, LedDecl):
             state_var = f"__state_{node.name}"
             bright_var = f"__brightness_{node.name}"
@@ -913,6 +970,23 @@ def emit(ast: Program) -> str:
             ultrasonic_decls[node.name] = node
 
     for node in (loop_body or []):
+        if isinstance(node, ButtonDecl):
+            button_decls[node.name] = node
+            prev_var = f"__redu_button_prev_{node.name}"
+            value_var = f"__redu_button_value_{node.name}"
+            prev_line = f"bool {prev_var} = false;"
+            value_line = f"bool {value_var} = false;"
+            if prev_line not in globals_:
+                globals_.append(prev_line)
+            if value_line not in globals_:
+                globals_.append(value_line)
+            pin_expr = _emit_expr(node.pin)
+            key = (node.name, pin_expr, node.mode)
+            if key not in pin_mode_emitted:
+                pin_mode_emitted.add(key)
+                setup_lines.append(f"  pinMode({pin_expr}, {node.mode});")
+            continue
+
         if isinstance(node, LedDecl):
             state_var = f"__state_{node.name}"
             bright_var = f"__brightness_{node.name}"
@@ -988,6 +1062,7 @@ def emit(ast: Program) -> str:
             rgb_led_state,
             rgb_led_colors,
             ultrasonic_decls,
+            button_decls,
             in_setup=True,
             emitted_pin_modes=pin_mode_emitted,
             ultrasonic_pin_modes=ultrasonic_pin_modes,
@@ -1008,6 +1083,7 @@ def emit(ast: Program) -> str:
                     rgb_led_state,
                     rgb_led_colors,
                     ultrasonic_decls,
+                    button_decls,
                     in_setup=False,
                     emitted_pin_modes=pin_mode_emitted,
                     ultrasonic_pin_modes=ultrasonic_pin_modes,
@@ -1025,6 +1101,7 @@ def emit(ast: Program) -> str:
             rgb_led_state,
             rgb_led_colors,
             ultrasonic_decls,
+            button_decls,
             in_setup=False,
             emitted_pin_modes=pin_mode_emitted,
             ultrasonic_pin_modes=ultrasonic_pin_modes,
@@ -1044,6 +1121,7 @@ def emit(ast: Program) -> str:
             dict(rgb_led_state),
             dict(rgb_led_colors),
             ultrasonic_decls,
+            button_decls,
             indent="  ",
             in_setup=False,
             emitted_pin_modes=set(),

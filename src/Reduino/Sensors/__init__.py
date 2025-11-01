@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .Button import Button
 from .Ultrasonic import HCSR04UltrasonicSensor, Ultrasonic, UltrasonicSensor
 
-__all__ = ["Ultrasonic", "UltrasonicSensor", "HCSR04UltrasonicSensor"]
+__all__ = ["Button", "Ultrasonic", "UltrasonicSensor", "HCSR04UltrasonicSensor"]
