@@ -1,4 +1,31 @@
-"""Placeholder runtime helper for the passive buzzer DSL primitive."""
+"""Placeholder runtime helper for the passive buzzer DSL primitive.
+
+The runtime intentionally performs no action—the transpiler replaces calls to
+this helper with Arduino code—but providing a small amount of documentation
+helps users understand the surface area that *is* recognised during
+transpilation.
+
+Supported built-in melodies
+===========================
+
+The :meth:`Buzzer.melody` helper accepts the following melody names, mirroring
+the emitter's bundled patterns.  Each name is case-sensitive.
+
+``"success"``
+    A quick, rising triad cue suitable for acknowledgement tones.
+``"error"``
+    A short descending blip that resolves to a low hold.
+``"startup"``
+    A C–E–G–C arpeggio, ideal for power-on or reset notifications.
+``"notify"``
+    A short double ping to highlight lightweight notifications.
+``"alarm"``
+    Alternating high/low notes that repeat eight times for urgency.
+``"scale_c"``
+    An ascending C-major scale resolving to the upper tonic.
+``"siren"``
+    A repeating two-note pattern that evokes a classic siren sweep.
+"""
 
 from __future__ import annotations
 
