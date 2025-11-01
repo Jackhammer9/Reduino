@@ -7,7 +7,7 @@ from typing import Any, List
 
 import pytest
 
-from Reduino.Utils import SerialMonitor
+from Reduino.Utils import SerialMonitor, map as map_value
 
 
 class DummySerial:
@@ -92,3 +92,12 @@ def test_serial_monitor_raises_when_pyserial_missing(monkeypatch: pytest.MonkeyP
     monitor = SerialMonitor()
     with pytest.raises(RuntimeError, match="pyserial is required"):
         monitor.connect("/dev/ttyUSB0")
+
+
+def test_map_scales_within_range() -> None:
+    assert map_value(512, 0, 1023, 0, 5) == pytest.approx(2.50244379, rel=1e-6)
+
+
+def test_map_rejects_zero_span() -> None:
+    with pytest.raises(ValueError):
+        map_value(1, 0, 0, 0, 10)

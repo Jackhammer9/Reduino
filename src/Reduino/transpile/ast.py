@@ -37,6 +37,14 @@ class ButtonPoll:
 
 
 @dataclass
+class PotentiometerDecl:
+    """Declare an analogue potentiometer input bound to ``pin``."""
+
+    name: str
+    pin: Union[int, str]
+
+
+@dataclass
 class LedDecl:
     """Declare an LED instance bound to ``pin``."""
 

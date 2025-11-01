@@ -28,6 +28,7 @@ from .ast import (
     RGBLedOff,
     RGBLedOn,
     RGBLedSetColor,
+    PotentiometerDecl,
     ReturnStmt,
     SerialMonitorDecl,
     SerialWrite,
@@ -218,6 +219,7 @@ def _emit_block(
     rgb_led_state: Dict[str, str],
     rgb_led_colors: Dict[str, Tuple[str, str, str]],
     ultrasonic_decls: Dict[str, UltrasonicDecl],
+    potentiometer_decls: Dict[str, PotentiometerDecl],
     button_decls: Dict[str, ButtonDecl],
     indent: str = "  ",
     *,
@@ -242,6 +244,7 @@ def _emit_block(
                     rgb_led_state,
                     rgb_led_colors,
                     ultrasonic_decls,
+                    potentiometer_decls,
                     button_decls,
                     indent + "  ",
                     in_setup=in_setup,
@@ -274,6 +277,10 @@ def _emit_block(
             lines.append(f"{indent}{value_var} = {next_var};")
             continue
 
+        if isinstance(node, PotentiometerDecl):
+            potentiometer_decls[node.name] = node
+            continue
+
         if isinstance(node, IfStatement):
             for idx, branch in enumerate(node.branches):
                 keyword = "if" if idx == 0 else "else if"
@@ -288,6 +295,7 @@ def _emit_block(
                         rgb_led_state,
                         rgb_led_colors,
                         ultrasonic_decls,
+                        potentiometer_decls,
                         button_decls,
                         indent + "  ",
                         in_setup=in_setup,
@@ -308,6 +316,7 @@ def _emit_block(
                         rgb_led_state,
                         rgb_led_colors,
                         ultrasonic_decls,
+                        potentiometer_decls,
                         button_decls,
                         indent + "  ",
                         in_setup=in_setup,
@@ -330,6 +339,7 @@ def _emit_block(
                     rgb_led_state,
                     rgb_led_colors,
                     ultrasonic_decls,
+                    potentiometer_decls,
                     button_decls,
                     indent + "  ",
                     in_setup=in_setup,
@@ -354,6 +364,7 @@ def _emit_block(
                     rgb_led_state,
                     rgb_led_colors,
                     ultrasonic_decls,
+                    potentiometer_decls,
                     button_decls,
                     indent + "  ",
                     in_setup=in_setup,
@@ -376,6 +387,7 @@ def _emit_block(
                     rgb_led_state,
                     rgb_led_colors,
                     ultrasonic_decls,
+                    potentiometer_decls,
                     button_decls,
                     indent + "  ",
                     in_setup=in_setup,
@@ -405,6 +417,7 @@ def _emit_block(
                         rgb_led_state,
                         rgb_led_colors,
                         ultrasonic_decls,
+                        potentiometer_decls,
                         button_decls,
                         indent + "  ",
                         in_setup=in_setup,
@@ -885,6 +898,7 @@ def emit(ast: Program) -> str:
     rgb_led_pins: Dict[str, Tuple[Union[int, str], Union[int, str], Union[int, str]]] = {}
     rgb_led_state: Dict[str, str] = {}
     rgb_led_colors: Dict[str, Tuple[str, str, str]] = {}
+    potentiometer_decls: Dict[str, PotentiometerDecl] = {}
     helpers = getattr(ast, "helpers", set())
     ultrasonic_measurements = getattr(ast, "ultrasonic_measurements", set())
 
@@ -968,6 +982,13 @@ def emit(ast: Program) -> str:
             rgb_led_pins[node.name] = (node.red_pin, node.green_pin, node.blue_pin)
         if isinstance(node, UltrasonicDecl):
             ultrasonic_decls[node.name] = node
+        if isinstance(node, PotentiometerDecl):
+            potentiometer_decls[node.name] = node
+            pin_expr = _emit_expr(node.pin)
+            key = (node.name, pin_expr, "INPUT")
+            if key not in pin_mode_emitted:
+                pin_mode_emitted.add(key)
+                setup_lines.append(f"  pinMode({pin_expr}, INPUT);")
 
     for node in (loop_body or []):
         if isinstance(node, ButtonDecl):
@@ -1050,6 +1071,13 @@ def emit(ast: Program) -> str:
             if echo_key not in loop_ultrasonic_modes:
                 loop_ultrasonic_modes.add(echo_key)
                 setup_lines.append(f"  pinMode({echo_expr}, INPUT);")
+        if isinstance(node, PotentiometerDecl):
+            potentiometer_decls.setdefault(node.name, node)
+            pin_expr = _emit_expr(node.pin)
+            key = (node.name, pin_expr, "INPUT")
+            if key not in pin_mode_emitted:
+                pin_mode_emitted.add(key)
+                setup_lines.append(f"  pinMode({pin_expr}, INPUT);")
 
     # Pass 2: emit statements
     setup_lines.extend(
@@ -1062,6 +1090,7 @@ def emit(ast: Program) -> str:
             rgb_led_state,
             rgb_led_colors,
             ultrasonic_decls,
+            potentiometer_decls,
             button_decls,
             in_setup=True,
             emitted_pin_modes=pin_mode_emitted,
@@ -1083,6 +1112,7 @@ def emit(ast: Program) -> str:
                     rgb_led_state,
                     rgb_led_colors,
                     ultrasonic_decls,
+                    potentiometer_decls,
                     button_decls,
                     in_setup=False,
                     emitted_pin_modes=pin_mode_emitted,
@@ -1101,6 +1131,7 @@ def emit(ast: Program) -> str:
             rgb_led_state,
             rgb_led_colors,
             ultrasonic_decls,
+            potentiometer_decls,
             button_decls,
             in_setup=False,
             emitted_pin_modes=pin_mode_emitted,
@@ -1121,6 +1152,7 @@ def emit(ast: Program) -> str:
             dict(rgb_led_state),
             dict(rgb_led_colors),
             ultrasonic_decls,
+            potentiometer_decls,
             button_decls,
             indent="  ",
             in_setup=False,

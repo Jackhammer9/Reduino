@@ -13,6 +13,7 @@ from Reduino.transpile.ast import (
     LedDecl,
     LedOff,
     LedToggle,
+    PotentiometerDecl,
     RGBLedBlink,
     RGBLedDecl,
     RGBLedFade,
@@ -259,6 +260,25 @@ def test_parser_declares_ultrasonic_sensor(src) -> None:
     assert len(ultrasonic_nodes) == 1
     assignments = [node for node in program.setup_body if isinstance(node, VarAssign)]
     assert any(node.name == "distance" for node in assignments)
+
+
+def test_parser_declares_potentiometer(src) -> None:
+    code = src(
+        """
+        from Reduino.Sensors import Potentiometer
+
+        pot = Potentiometer(0)
+        value = pot.read()
+        """
+    )
+
+    program = _parse(code)
+    pots = [node for node in program.setup_body if isinstance(node, PotentiometerDecl)]
+    assert len(pots) == 1
+    assignments = [node for node in program.setup_body if isinstance(node, VarAssign)]
+    assert any(
+        node.name == "value" and "analogRead(0)" in node.expr for node in assignments
+    )
 
 
 def test_parser_records_button_declaration_and_poll(src) -> None:
