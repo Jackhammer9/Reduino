@@ -7,7 +7,8 @@ from typing import Any, List
 
 import pytest
 
-from Reduino.Utils import SerialMonitor, map as map_value
+from Reduino.Communication import SerialMonitor
+from Reduino.Utils import map as map_value
 
 
 class DummySerial:
@@ -36,7 +37,7 @@ class DummySerial:
 
 
 def _patch_serial(monkeypatch: pytest.MonkeyPatch, serial_obj: Any) -> None:
-    monkeypatch.setattr("Reduino.Utils.serial", serial_obj)
+    monkeypatch.setattr("Reduino.Communication.serial", serial_obj)
 
 
 def test_serial_monitor_connects_and_reads(monkeypatch: pytest.MonkeyPatch, capfd) -> None:

@@ -7,9 +7,9 @@ import sys
 
 
 def _sleep(*args, **kwargs):
-    """Proxy to the package-level ``Sleep`` so monkeypatching works."""
+    """Proxy to the package-level ``sleep`` so monkeypatching works."""
 
-    return getattr(sys.modules[__package__], "Sleep")(*args, **kwargs)
+    return getattr(sys.modules[__package__], "sleep")(*args, **kwargs)
 
 
 class Led:

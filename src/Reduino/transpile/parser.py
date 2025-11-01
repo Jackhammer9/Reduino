@@ -1163,8 +1163,8 @@ def _merge_return_types(types: List[str], has_void: bool) -> str:
 # Imports to ignore
 RE_IMPORT_LED     = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+Led\s*$")
 RE_IMPORT_RGB_LED = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+RGBLed\s*$")
-RE_IMPORT_SLEEP   = re.compile(r"^\s*from\s+Reduino\.Time\s+import\s+Sleep\s*$")
-RE_IMPORT_SERIAL  = re.compile(r"^\s*from\s+Reduino\.Utils\s+import\s+SerialMonitor\s*$")
+RE_IMPORT_SLEEP   = re.compile(r"^\s*from\s+Reduino\.Utils\s+import\s+sleep\s*$")
+RE_IMPORT_SERIAL  = re.compile(r"^\s*from\s+Reduino\.Communication\s+import\s+SerialMonitor\s*$")
 RE_IMPORT_TARGET  = re.compile(r"^\s*from\s+Reduino\s+import\s+target\s*$")
 RE_IMPORT_ULTRASONIC = re.compile(r"^\s*from\s+Reduino\.Sensors\s+import\s+Ultrasonic\s*$")
 RE_IMPORT_BUTTON  = re.compile(r"^\s*from\s+Reduino\.Sensors\s+import\s+Button\s*$")
@@ -1200,7 +1200,7 @@ RE_SERIAL_DECL    = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*SerialMonitor\s*\(\s*(
 RE_SERIAL_WRITE   = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.write\(\s*(.*?)\s*\)\s*$")
 
 #Time Primitives
-RE_SLEEP_EXPR = re.compile(r"^\s*Sleep\s*\(\s*(.+?)\s*\)\s*$")
+RE_SLEEP_EXPR = re.compile(r"^\s*sleep\s*\(\s*(.+?)\s*\)\s*$")
 
 # Build directive: regex for target device
 RE_TARGET_CALL = re.compile(r"""^\s*target\s*\(\s*(?:['"])?\s*([A-Za-z0-9:_\-./\\~]+)\s*(?:['"])?\s*\)\s*$""")
@@ -2152,7 +2152,7 @@ def _parse_simple_lines(
             continue
 
         # --- IMPORTANT: handle assignments FIRST (single + tuple) ---
-        # This updates env before we evaluate Led(...) or Sleep(...)
+        # This updates env before we evaluate Led(...) or sleep(...)
         assignment_nodes = _handle_assignment_ast(line, ctx, scope, depth)
         if assignment_nodes is not None:
             body.extend(assignment_nodes)
