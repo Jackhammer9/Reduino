@@ -7,7 +7,7 @@ from typing import Callable
 
 import pytest
 
-from Reduino.Actuators import Led, RGBLed
+from Reduino.Actuators import Led, RGBLed, Servo
 
 
 def _patch_sleep(monkeypatch: pytest.MonkeyPatch, collector: list[float]) -> None:
@@ -220,3 +220,37 @@ class TestRGBLed:
             led.blink(0, 0, 0, times=0)
         with pytest.raises(ValueError):
             led.blink(0, 0, 0, delay_ms=-1)
+
+
+class TestServo:
+    """Tests covering the :class:`Reduino.Actuators.Servo` helper."""
+
+    def test_defaults_and_pin(self) -> None:
+        servo = Servo()
+        assert servo.pin == 9
+        assert servo.read() == 0
+        assert servo.read_us() == pytest.approx(544)
+
+    def test_write_accepts_within_bounds(self) -> None:
+        servo = Servo()
+        servo.write(90)
+        assert servo.read() == 90
+        expected_pulse = 544 + (2400 - 544) * (90 / 180)
+        assert servo.read_us() == pytest.approx(expected_pulse)
+
+    def test_write_rejects_out_of_bounds(self) -> None:
+        servo = Servo()
+        with pytest.raises(ValueError, match="angle must be within the configured bounds"):
+            servo.write(200)
+
+    def test_write_us_roundtrip(self) -> None:
+        servo = Servo()
+        servo.write_us(1500)
+        assert servo.read_us() == pytest.approx(1500)
+        expected_angle = (1500 - 544) / (2400 - 544) * 180
+        assert servo.read() == pytest.approx(expected_angle)
+
+    def test_write_us_rejects_out_of_bounds(self) -> None:
+        servo = Servo()
+        with pytest.raises(ValueError, match="pulse must be within the configured bounds"):
+            servo.write_us(500)

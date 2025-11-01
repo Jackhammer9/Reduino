@@ -28,6 +28,9 @@ from .ast import (
     RGBLedOff,
     RGBLedOn,
     RGBLedSetColor,
+    ServoDecl,
+    ServoWrite,
+    ServoWriteMicroseconds,
     PotentiometerDecl,
     ReturnStmt,
     SerialMonitorDecl,
@@ -221,6 +224,8 @@ def _emit_block(
     ultrasonic_decls: Dict[str, UltrasonicDecl],
     potentiometer_decls: Dict[str, PotentiometerDecl],
     button_decls: Dict[str, ButtonDecl],
+    servo_decls: Dict[str, ServoDecl],
+    servo_state: Dict[str, Dict[str, str]],
     indent: str = "  ",
     *,
     in_setup: bool = False,
@@ -246,6 +251,8 @@ def _emit_block(
                     ultrasonic_decls,
                     potentiometer_decls,
                     button_decls,
+                    servo_decls,
+                    servo_state,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
@@ -277,6 +284,10 @@ def _emit_block(
             lines.append(f"{indent}{value_var} = {next_var};")
             continue
 
+        if isinstance(node, ServoDecl):
+            servo_decls.setdefault(node.name, node)
+            continue
+
         if isinstance(node, PotentiometerDecl):
             potentiometer_decls[node.name] = node
             continue
@@ -286,22 +297,24 @@ def _emit_block(
                 keyword = "if" if idx == 0 else "else if"
                 lines.append(f"{indent}{keyword} ({branch.condition}) {{")
                 lines.extend(
-                    _emit_block(
-                        branch.body,
-                        led_pin,
-                        led_state,
-                        led_brightness,
-                        rgb_led_pins,
-                        rgb_led_state,
-                        rgb_led_colors,
-                        ultrasonic_decls,
-                        potentiometer_decls,
-                        button_decls,
-                        indent + "  ",
-                        in_setup=in_setup,
-                        emitted_pin_modes=emitted_pin_modes,
-                        ultrasonic_pin_modes=ultrasonic_pin_modes,
-                    )
+                _emit_block(
+                    branch.body,
+                    led_pin,
+                    led_state,
+                    led_brightness,
+                    rgb_led_pins,
+                    rgb_led_state,
+                    rgb_led_colors,
+                    ultrasonic_decls,
+                    potentiometer_decls,
+                    button_decls,
+                    servo_decls,
+                    servo_state,
+                    indent + "  ",
+                    in_setup=in_setup,
+                    emitted_pin_modes=emitted_pin_modes,
+                    ultrasonic_pin_modes=ultrasonic_pin_modes,
+                )
                 )
                 lines.append(f"{indent}}}")
             if node.else_body:
@@ -318,6 +331,8 @@ def _emit_block(
                         ultrasonic_decls,
                         potentiometer_decls,
                         button_decls,
+                        servo_decls,
+                        servo_state,
                         indent + "  ",
                         in_setup=in_setup,
                         emitted_pin_modes=emitted_pin_modes,
@@ -341,6 +356,8 @@ def _emit_block(
                     ultrasonic_decls,
                     potentiometer_decls,
                     button_decls,
+                    servo_decls,
+                    servo_state,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
@@ -366,6 +383,8 @@ def _emit_block(
                     ultrasonic_decls,
                     potentiometer_decls,
                     button_decls,
+                    servo_decls,
+                    servo_state,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
@@ -389,6 +408,8 @@ def _emit_block(
                     ultrasonic_decls,
                     potentiometer_decls,
                     button_decls,
+                    servo_decls,
+                    servo_state,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
@@ -419,6 +440,8 @@ def _emit_block(
                         ultrasonic_decls,
                         potentiometer_decls,
                         button_decls,
+                        servo_decls,
+                        servo_state,
                         indent + "  ",
                         in_setup=in_setup,
                         emitted_pin_modes=emitted_pin_modes,
@@ -510,6 +533,31 @@ def _emit_block(
             block_lines.append(f"{indent}}}")
             return block_lines
 
+        def _ensure_servo_tracking(
+            name: str,
+        ) -> Tuple[str, str, str, str, str, str, str]:
+            info = servo_state.setdefault(
+                name,
+                {
+                    "object": f"__servo_{name}",
+                    "min_angle": f"__servo_min_angle_{name}",
+                    "max_angle": f"__servo_max_angle_{name}",
+                    "min_pulse": f"__servo_min_pulse_{name}",
+                    "max_pulse": f"__servo_max_pulse_{name}",
+                    "angle": f"__servo_angle_{name}",
+                    "pulse": f"__servo_pulse_{name}",
+                },
+            )
+            return (
+                info["object"],
+                info["min_angle"],
+                info["max_angle"],
+                info["min_pulse"],
+                info["max_pulse"],
+                info["angle"],
+                info["pulse"],
+            )
+
         if isinstance(node, LedDecl):
             led_pin[node.name] = node.pin
             led_state[node.name] = f"__state_{node.name}"
@@ -561,6 +609,88 @@ def _emit_block(
                 if echo_key not in ultrasonic_pin_modes:
                     ultrasonic_pin_modes.add(echo_key)
                     lines.append(f"{indent}pinMode({echo_expr}, INPUT);")
+            continue
+
+        if isinstance(node, ServoWrite):
+            (
+                servo_obj,
+                min_angle_var,
+                max_angle_var,
+                min_pulse_var,
+                max_pulse_var,
+                angle_var,
+                pulse_var,
+            ) = _ensure_servo_tracking(node.name)
+            angle_expr = _emit_expr(node.angle)
+            lines.append(f"{indent}{{")
+            lines.append(
+                f"{indent}  float __redu_angle = static_cast<float>({angle_expr});"
+            )
+            lines.append(
+                f"{indent}  if (__redu_angle < {min_angle_var}) {{ __redu_angle = {min_angle_var}; }}"
+            )
+            lines.append(
+                f"{indent}  if (__redu_angle > {max_angle_var}) {{ __redu_angle = {max_angle_var}; }}"
+            )
+            lines.append(f"{indent}  {angle_var} = __redu_angle;")
+            lines.append(
+                f"{indent}  float __redu_span = {max_angle_var} - {min_angle_var};"
+            )
+            lines.append(
+                f"{indent}  if (__redu_span == 0.0f) {{ __redu_span = 1.0f; }}"
+            )
+            lines.append(
+                f"{indent}  float __redu_pulse = {min_pulse_var} + ((__redu_angle - {min_angle_var}) / __redu_span) * ({max_pulse_var} - {min_pulse_var});"
+            )
+            lines.append(
+                f"{indent}  if (__redu_pulse < {min_pulse_var}) {{ __redu_pulse = {min_pulse_var}; }}"
+            )
+            lines.append(
+                f"{indent}  if (__redu_pulse > {max_pulse_var}) {{ __redu_pulse = {max_pulse_var}; }}"
+            )
+            lines.append(f"{indent}  {pulse_var} = __redu_pulse;")
+            lines.append(
+                f"{indent}  {servo_obj}.write(static_cast<int>(__redu_angle + 0.5f));"
+            )
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, ServoWriteMicroseconds):
+            (
+                servo_obj,
+                min_angle_var,
+                max_angle_var,
+                min_pulse_var,
+                max_pulse_var,
+                angle_var,
+                pulse_var,
+            ) = _ensure_servo_tracking(node.name)
+            pulse_expr = _emit_expr(node.pulse_us)
+            lines.append(f"{indent}{{")
+            lines.append(
+                f"{indent}  float __redu_pulse = static_cast<float>({pulse_expr});"
+            )
+            lines.append(
+                f"{indent}  if (__redu_pulse < {min_pulse_var}) {{ __redu_pulse = {min_pulse_var}; }}"
+            )
+            lines.append(
+                f"{indent}  if (__redu_pulse > {max_pulse_var}) {{ __redu_pulse = {max_pulse_var}; }}"
+            )
+            lines.append(f"{indent}  {pulse_var} = __redu_pulse;")
+            lines.append(
+                f"{indent}  float __redu_span = {max_pulse_var} - {min_pulse_var};"
+            )
+            lines.append(
+                f"{indent}  if (__redu_span == 0.0f) {{ __redu_span = 1.0f; }}"
+            )
+            lines.append(
+                f"{indent}  float __redu_angle = {min_angle_var} + ((__redu_pulse - {min_pulse_var}) / __redu_span) * ({max_angle_var} - {min_angle_var});"
+            )
+            lines.append(f"{indent}  {angle_var} = __redu_angle;")
+            lines.append(
+                f"{indent}  {servo_obj}.writeMicroseconds(static_cast<int>({pulse_var} + 0.5f));"
+            )
+            lines.append(f"{indent}}}")
             continue
 
         if isinstance(node, LedOn):
@@ -899,6 +1029,10 @@ def emit(ast: Program) -> str:
     rgb_led_state: Dict[str, str] = {}
     rgb_led_colors: Dict[str, Tuple[str, str, str]] = {}
     potentiometer_decls: Dict[str, PotentiometerDecl] = {}
+    servo_decls: Dict[str, ServoDecl] = {}
+    servo_state: Dict[str, Dict[str, str]] = {}
+    servo_attach_emitted: Set[str] = set()
+    servo_used = False
     helpers = getattr(ast, "helpers", set())
     ultrasonic_measurements = getattr(ast, "ultrasonic_measurements", set())
 
@@ -927,6 +1061,57 @@ def emit(ast: Program) -> str:
     # Pass 1: collect LED declarations to create globals & pinModes in setup()
     pin_mode_emitted: Set[Tuple[str, ...]] = set()
 
+    def _ensure_servo_globals(node: ServoDecl) -> Dict[str, str]:
+        nonlocal servo_used
+        servo_used = True
+        info = servo_state.setdefault(
+            node.name,
+            {
+                "object": f"__servo_{node.name}",
+                "min_angle": f"__servo_min_angle_{node.name}",
+                "max_angle": f"__servo_max_angle_{node.name}",
+                "min_pulse": f"__servo_min_pulse_{node.name}",
+                "max_pulse": f"__servo_max_pulse_{node.name}",
+                "angle": f"__servo_angle_{node.name}",
+                "pulse": f"__servo_pulse_{node.name}",
+            },
+        )
+        servo_decls[node.name] = node
+        obj_line = f"Servo {info['object']};"
+        if obj_line not in globals_:
+            globals_.append(obj_line)
+        min_angle_expr = _emit_expr(node.min_angle)
+        max_angle_expr = _emit_expr(node.max_angle)
+        min_pulse_expr = _emit_expr(node.min_pulse_us)
+        max_pulse_expr = _emit_expr(node.max_pulse_us)
+        min_angle_line = (
+            f"float {info['min_angle']} = static_cast<float>({min_angle_expr});"
+        )
+        if min_angle_line not in globals_:
+            globals_.append(min_angle_line)
+        max_angle_line = (
+            f"float {info['max_angle']} = static_cast<float>({max_angle_expr});"
+        )
+        if max_angle_line not in globals_:
+            globals_.append(max_angle_line)
+        min_pulse_line = (
+            f"float {info['min_pulse']} = static_cast<float>({min_pulse_expr});"
+        )
+        if min_pulse_line not in globals_:
+            globals_.append(min_pulse_line)
+        max_pulse_line = (
+            f"float {info['max_pulse']} = static_cast<float>({max_pulse_expr});"
+        )
+        if max_pulse_line not in globals_:
+            globals_.append(max_pulse_line)
+        angle_line = f"float {info['angle']} = {info['min_angle']};"
+        if angle_line not in globals_:
+            globals_.append(angle_line)
+        pulse_line = f"float {info['pulse']} = {info['min_pulse']};"
+        if pulse_line not in globals_:
+            globals_.append(pulse_line)
+        return info
+
     for node in (setup_body or []):
         if isinstance(node, ButtonDecl):
             button_decls[node.name] = node
@@ -949,6 +1134,21 @@ def emit(ast: Program) -> str:
                 )
                 setup_lines.append(f"  {value_var} = {prev_var};")
                 button_init_emitted.add(node.name)
+            continue
+
+        if isinstance(node, ServoDecl):
+            info = _ensure_servo_globals(node)
+            if node.name not in servo_attach_emitted:
+                servo_attach_emitted.add(node.name)
+                pin_expr = _emit_expr(node.pin)
+                min_pulse_expr = _emit_expr(node.min_pulse_us)
+                max_pulse_expr = _emit_expr(node.max_pulse_us)
+                setup_lines.append(
+                    f"  {info['object']}.attach({pin_expr}, static_cast<int>({min_pulse_expr}), static_cast<int>({max_pulse_expr}));"
+                )
+                setup_lines.append(
+                    f"  {info['object']}.writeMicroseconds(static_cast<int>({min_pulse_expr}));"
+                )
             continue
 
         if isinstance(node, LedDecl):
@@ -1006,6 +1206,21 @@ def emit(ast: Program) -> str:
             if key not in pin_mode_emitted:
                 pin_mode_emitted.add(key)
                 setup_lines.append(f"  pinMode({pin_expr}, {node.mode});")
+            continue
+
+        if isinstance(node, ServoDecl):
+            info = _ensure_servo_globals(node)
+            if node.name not in servo_attach_emitted:
+                servo_attach_emitted.add(node.name)
+                pin_expr = _emit_expr(node.pin)
+                min_pulse_expr = _emit_expr(node.min_pulse_us)
+                max_pulse_expr = _emit_expr(node.max_pulse_us)
+                setup_lines.append(
+                    f"  {info['object']}.attach({pin_expr}, static_cast<int>({min_pulse_expr}), static_cast<int>({max_pulse_expr}));"
+                )
+                setup_lines.append(
+                    f"  {info['object']}.writeMicroseconds(static_cast<int>({min_pulse_expr}));"
+                )
             continue
 
         if isinstance(node, LedDecl):
@@ -1092,6 +1307,8 @@ def emit(ast: Program) -> str:
             ultrasonic_decls,
             potentiometer_decls,
             button_decls,
+            servo_decls,
+            servo_state,
             in_setup=True,
             emitted_pin_modes=pin_mode_emitted,
             ultrasonic_pin_modes=ultrasonic_pin_modes,
@@ -1114,6 +1331,8 @@ def emit(ast: Program) -> str:
                     ultrasonic_decls,
                     potentiometer_decls,
                     button_decls,
+                    servo_decls,
+                    servo_state,
                     in_setup=False,
                     emitted_pin_modes=pin_mode_emitted,
                     ultrasonic_pin_modes=ultrasonic_pin_modes,
@@ -1133,6 +1352,8 @@ def emit(ast: Program) -> str:
             ultrasonic_decls,
             potentiometer_decls,
             button_decls,
+            servo_decls,
+            servo_state,
             in_setup=False,
             emitted_pin_modes=pin_mode_emitted,
             ultrasonic_pin_modes=ultrasonic_pin_modes,
@@ -1154,6 +1375,8 @@ def emit(ast: Program) -> str:
             ultrasonic_decls,
             potentiometer_decls,
             button_decls,
+            servo_decls,
+            servo_state,
             indent="  ",
             in_setup=False,
             emitted_pin_modes=set(),
@@ -1212,6 +1435,8 @@ def emit(ast: Program) -> str:
 
     # Stitch sections
     parts: List[str] = [HEADER]
+    if servo_used:
+        parts.append("#include <Servo.h>\n\n")
     if "list" in helpers:
         parts.append(LIST_HELPER_SNIPPET + "\n")
     if "len" in helpers:

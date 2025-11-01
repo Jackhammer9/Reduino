@@ -20,6 +20,9 @@ from Reduino.transpile.ast import (
     RGBLedOff,
     RGBLedOn,
     RGBLedSetColor,
+    ServoDecl,
+    ServoWrite,
+    ServoWriteMicroseconds,
     ReturnStmt,
     SerialMonitorDecl,
     SerialWrite,
@@ -197,6 +200,39 @@ def test_parser_rgb_led_nodes(src) -> None:
         RGBLedBlink,
         RGBLedOff,
     }
+
+
+def test_parser_servo_nodes(src) -> None:
+    code = src(
+        """
+        from Reduino.Actuators import Servo
+
+        servo = Servo(9, min_angle=15.0, max_angle=165.0, min_pulse_us=500, max_pulse_us=2400)
+        servo.write(90)
+        servo.write_us(1500)
+        angle = servo.read()
+        pulse = servo.read_us()
+        """
+    )
+
+    program = _parse(code)
+    servo_nodes = [node for node in program.setup_body if node.__class__.__name__.startswith("Servo")]
+    assert any(isinstance(node, ServoDecl) for node in servo_nodes)
+    assert any(isinstance(node, ServoWrite) for node in servo_nodes)
+    assert any(isinstance(node, ServoWriteMicroseconds) for node in servo_nodes)
+
+    angle_exprs = [
+        getattr(node, "expr", None)
+        for node in program.setup_body
+        if getattr(node, "name", None) == "angle"
+    ]
+    pulse_exprs = [
+        getattr(node, "expr", None)
+        for node in program.setup_body
+        if getattr(node, "name", None) == "pulse"
+    ]
+    assert "__servo_angle_servo" in angle_exprs
+    assert "__servo_pulse_servo" in pulse_exprs
 
 
 def test_parser_try_statement(src) -> None:
