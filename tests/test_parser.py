@@ -40,11 +40,11 @@ def test_parser_collects_setup_statements(src) -> None:
     code = src(
         """
         from Reduino.Actuators import Led
-        from Reduino.Time import Sleep
+        from Reduino.Utils import sleep
 
         led = Led(13)
         led.toggle()
-        Sleep(250)
+        sleep(250)
         """
     )
 
@@ -141,11 +141,11 @@ def test_parser_target_detection(src) -> None:
 def test_parser_tuple_assignment_and_var_decl(src) -> None:
     code = src(
         """
-        from Reduino.Time import Sleep
+        from Reduino.Utils import sleep
 
         a, b = 1, 2
         b, a = a, b
-        Sleep(a + b)
+        sleep(a + b)
         """
     )
 
@@ -158,7 +158,7 @@ def test_parser_tuple_assignment_and_var_decl(src) -> None:
 def test_parser_serial_monitor(src) -> None:
     code = src(
         """
-        from Reduino.Utils import SerialMonitor
+        from Reduino.Communication import SerialMonitor
 
         monitor = SerialMonitor(115200)
         monitor.write("hello")

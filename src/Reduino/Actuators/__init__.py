@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from Reduino.Time import Sleep
+from Reduino.Utils import sleep
 
-__all__ = ["Sleep"]
+__all__ = ["sleep"]
 
 from .Led import Led
 from .RGBLed import RGBLed

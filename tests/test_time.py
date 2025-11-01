@@ -1,21 +1,21 @@
-"""Tests for the :mod:`Reduino.Time` utilities."""
+"""Tests for the :mod:`Reduino.Utils` utilities."""
 
 from __future__ import annotations
 
 import pytest
 
-from Reduino.Time import Sleep
+from Reduino.Utils import sleep
 
 
 def test_sleep_converts_to_seconds():
     calls: list[float] = []
-    Sleep(250, sleep_func=calls.append)
+    sleep(250, sleep_func=calls.append)
     assert pytest.approx(calls) == [0.25]
 
 
 def test_sleep_validates_duration():
     with pytest.raises(ValueError):
-        Sleep(-1)
+        sleep(-1)
 
 
 def test_sleep_uses_injected_callable():
@@ -24,12 +24,12 @@ def test_sleep_uses_injected_callable():
     def fake_sleep(value: float) -> None:
         calls.append(value)
 
-    Sleep(500, sleep_func=fake_sleep)
+    sleep(500, sleep_func=fake_sleep)
 
     assert calls == [0.5]
 
 
 def test_sleep_accepts_float_duration():
     calls: list[float] = []
-    Sleep(12.5, sleep_func=calls.append)
+    sleep(12.5, sleep_func=calls.append)
     assert calls == [0.0125]

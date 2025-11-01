@@ -52,10 +52,10 @@
 
   * [`Reduino.Actuators.Led`](#reduinoactuatorsled)
   * [`Reduino.Sensors.Ultrasonic`](#reduinosensorsultrasonic)
-  * [`Reduino.Time.Sleep`](#reduinotimesleep)
+  * [`Reduino.Utils.sleep`](#reduinoutilssleep)
   * [`Reduino.target`](#reduinotarget)
   * [`Reduino.Utils`](#reduinoutils)
-  * [`Reduino.Utils.SerialMonitor`](#reduinoutilsserialmonitor)
+  * [`Reduino.Communication.SerialMonitor`](#reduinocommunicationserialmonitor)
 * [Supported devices & primitives](#supported-devices--primitives)
 * [Supported Python features](#supported-python-features)
 * [Testing](#testing)
@@ -131,17 +131,18 @@ sensor = Ultrasonic(trig=7, echo=6)
 reading = sensor.measure_distance()
 ```
 
-### `Reduino.Time.Sleep`
+### `Reduino.Utils.sleep`
 
-| Member                       | Description                                                |
-| ---------------------------- | ---------------------------------------------------------- |
-| `Sleep(ms, sleep_func=None)` | Delay helper; custom `sleep_func` is injectable for tests. |
+| Member                        | Description                                                |
+| ----------------------------- | ---------------------------------------------------------- |
+| `sleep(ms, sleep_func=None)` | Delay helper; custom `sleep_func` is injectable for tests. |
 
 **Example**
 
 ```python
-from Reduino.Time import Sleep
-Sleep(500)
+from Reduino.Utils import sleep
+
+sleep(500)
 ```
 
 ### `Reduino.target`
@@ -164,10 +165,10 @@ print(cpp)
 APIs. They are designed to be imported piecemeal:
 
 ```python
-from Reduino.Utils import SerialMonitor
+from Reduino.Utils import sleep, map
 ```
 
-### `Reduino.Utils.SerialMonitor`
+### `Reduino.Communication.SerialMonitor`
 
 | Member                                                   | Description                                                                 |
 | -------------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -181,7 +182,7 @@ from Reduino.Utils import SerialMonitor
 
 ```python
 from Reduino import target
-from Reduino.Utils import SerialMonitor
+from Reduino.Communication import SerialMonitor
 
 monitor = SerialMonitor(baud_rate=115200)
 monitor.connect("/dev/ttyACM0")  # requires the optional 'pyserial' dependency

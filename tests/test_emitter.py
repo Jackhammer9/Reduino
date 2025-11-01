@@ -17,11 +17,11 @@ def test_emit_generates_setup_and_loop(src, norm) -> None:
         src(
             """
             from Reduino.Actuators import Led
-            from Reduino.Time import Sleep
+            from Reduino.Utils import sleep
 
             led = Led(13)
             led.toggle()
-            Sleep(250)
+            sleep(250)
             """
         )
     )
@@ -40,12 +40,12 @@ def test_emit_infinite_loop_moves_body_to_loop(src, norm) -> None:
         src(
             """
             from Reduino.Actuators import Led
-            from Reduino.Time import Sleep
+            from Reduino.Utils import sleep
 
             led = Led()
             while True:
                 led.toggle()
-                Sleep(100)
+                sleep(100)
             """
         )
     )
@@ -167,7 +167,7 @@ def test_emit_serial_monitor_and_variables(src, norm) -> None:
     cpp = compile_source(
         src(
             """
-            from Reduino.Utils import SerialMonitor
+            from Reduino.Communication import SerialMonitor
 
             monitor = SerialMonitor(115200)
             counter = 0

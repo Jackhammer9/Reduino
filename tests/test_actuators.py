@@ -11,12 +11,12 @@ from Reduino.Actuators import Led, RGBLed
 
 
 def _patch_sleep(monkeypatch: pytest.MonkeyPatch, collector: list[float]) -> None:
-    """Patch the module-level ``Sleep`` helper to record delays."""
+    """Patch the module-level ``sleep`` helper to record delays."""
 
     def fake_sleep(duration: float, *, sleep_func: Callable | None = None) -> None:  # pragma: no cover - helper
         collector.append(duration)
 
-    monkeypatch.setattr("Reduino.Actuators.Sleep", fake_sleep)
+    monkeypatch.setattr("Reduino.Actuators.sleep", fake_sleep)
 
 
 class TestLed:
