@@ -77,7 +77,7 @@
 ```bash
 pip install Reduino
 pip install platformio  # required for automatic uploads
-````
+```
 
 > [!NOTE]
 > PlatformIO is only required for **automatic** build & upload. You can still transpile without it.
@@ -121,7 +121,6 @@ while True:
 Generated Arduino structure (conceptually):
 
 ```cpp
-Copy code
 void setup() {
   pinMode(13, OUTPUT);
 }
@@ -315,8 +314,8 @@ mon = SerialMonitor(9600 , "COM3")
 pot = Potentiometer("A0")
 
 while True:
-  value = pot.read()
-  mon.write(value)
+    value = pot.read()
+    mon.write(value)
 ```
 
 ---
@@ -368,9 +367,9 @@ from Reduino.Communication import SerialMonitor
 mon = SerialMonitor(baud_rate=115200, port="COM4")
 
 while True:
-  mon.write("hello")
-  mon.read()
-  mon.close()
+    mon.write("hello")
+    mon.read()
+    mon.close()
 ```
 
 > [!NOTE]
