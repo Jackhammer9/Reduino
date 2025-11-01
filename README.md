@@ -452,3 +452,11 @@ For commercial usage, redistribution, or integration into closed-source systems,
 please contact me at arnavbajaj9@gmail.com for alternative licensing options.
 
 See [LICENSE](https://www.gnu.org/licenses/gpl-3.0) for full details.
+
+<h1> Star History </h1>
+<br>
+<div align = "center">
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Jackhammer9/Reduino&type=Date)](https://star-history.com/#Jackhammer9/Reduino&Date)
+
+</div>
