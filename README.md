@@ -4,8 +4,6 @@
   <h1>Reduino</h1>
   <p><em>Write friendly Python. Get Arduino-ready C++. Upload Easily to MCUs.</em></p>
 
-  <!-- Badges -->
-
   <a href="https://www.gnu.org/licenses/gpl-3.0">
     <img alt="License" src="https://img.shields.io/badge/License-GPLv3-blueviolet" />
   </a>
@@ -47,217 +45,411 @@
 
 * [Overview](#overview)
 * [Quick start](#quick-start)
-* [How it works](#how-it-works)
+* [The `target()` function (Required)](#the-target-function-required)
 * [API reference](#api-reference)
-
-  * [`Reduino.Actuators.Led`](#reduinoactuatorsled)
-  * [`Reduino.Sensors.Ultrasonic`](#reduinosensorsultrasonic)
-  * [`Reduino.Utils.sleep`](#reduinoutilssleep)
-  * [`Reduino.target`](#reduinotarget)
-  * [`Reduino.Utils`](#reduinoutils)
-  * [`Reduino.Communication.SerialMonitor`](#reduinocommunicationserialmonitor)
-* [Supported devices & primitives](#supported-devices--primitives)
+  * [Actuators](#actuators)
+    * [LED](#led)
+    * [RGB LED](#rgb-led)
+    * [Buzzer](#buzzer)
+    * [Servo](#servo)
+  * [Sensors](#sensors)
+    * [Button](#button)
+    * [Potentiometer](#potentiometer)
+    * [Ultrasonic](#ultrasonic)
+  * [Communication](#communication)
+    * [SerialMonitor](#serialmonitor)
+  * [Utilities](#utilities)
+    * [sleep](#sleep)
+    * [map](#map)
 * [Supported Python features](#supported-python-features)
-* [Testing](#testing)
-* [Contributing](#contributing)
 * [License](#license)
+
+---
 
 ## Overview
 
-Reduino lets you write a small, Pythonic DSL that transpiles to clean Arduino C++ and optionally flashes your board via PlatformIO. You get readable Python during development and reliable C++ on the device.
+**Reduino** lets you write high-level Python that compiles into clean Arduino C++, then optionally uploads it to your board via PlatformIO.
+
+---
 
 ## Quick start
 
-> **Requirements**: Python 3.10+, [PlatformIO](https://platformio.org/) for building/flashing.
-
 ```bash
 pip install Reduino
-pip install platformio  # required for uploads
+pip install platformio  # required for automatic uploads
+````
+
+> [!NOTE]
+> PlatformIO is only required for **automatic** build & upload. You can still transpile without it.
+
+---
+
+## The `target()` function (Required)
+
+Place `target()` **at the very top of your script**, immediately after imports. This is the entry point that tells Reduino to parse your entire file, transpile it to Arduino C++, and (optionally) upload it.
+
+| Parameter |  Type  | Default | Description                                                             |
+| --------: | :----: | :-----: | ----------------------------------------------------------------------- |
+|    `port` |  `str` |    —    | Serial port, e.g. `"COM3"` or `"/dev/ttyACM0"`.                         |
+|  `upload` | `bool` |  `True` | If `True`, compile & upload via PlatformIO. If `False`, only transpile. |
+
+**Returns:** `str` of the generated Arduino C++ source.
+
+**Minimal example (top-of-file `target`)**
+
+```python
+from Reduino import target
+target("COM3")  # upload=True by default
+
+# Your Reduino code below...
 ```
 
-If `upload=True`, Reduino will run `pio run -t upload` for you in a temporary PlatformIO project (Arduino Uno by default). You can re-run `pio run` later to rebuild or flash again.
+### Example: Reduino structure explained
 
-## How it works
+Reduino automatically splits your Python code into Arduino sections.
 
-1. **Parse** – `Reduino.transpile.parser.parse()` builds an intermediate representation (IR) from your script.
-2. **Analyze** – Constant folding, control-flow preservation, and safety checks happen on the IR.
-3. **Emit** – `Reduino.transpile.emitter.emit()` produces Arduino-ready C++ (`main.cpp`).
-4. **Toolchain** – `Reduino.target()` writes a `platformio.ini` (serial port & board), and optionally calls PlatformIO to build/flash.
+```python
+from Reduino import target
+target("COM3")
 
-Hardware side effects only occur on the device after upload—host-side execution is side-effect free.
+from Reduino.Actuators import Led
+led = Led(13)
+
+while True:
+    led.toggle()          # repeated code -> goes into void loop()
+```
+Generated Arduino structure (conceptually):
+
+```cpp
+Copy code
+void setup() {
+  pinMode(13, OUTPUT);
+}
+
+void loop() {
+  digitalWrite(13, !digitalRead(13));
+  delay(500);
+}
+```
+Everything before while True: (declarations, prints, sensor setup, etc.)
+is placed inside setup(), and everything inside the while True loop is placed in loop().
+
+**Transpile only (no upload)**
+
+```python
+from Reduino import target
+cpp = target("COM3", upload=False)
+print(cpp)
+
+# Your Reduino code below...
+```
+
+> [!IMPORTANT]
+> `target()` reads the whole file text and generates code for everything below it.
+> If `upload=True`, it also builds and flashes using a temporary PlatformIO project.
+
+---
 
 ## API reference
 
-### `Reduino.Actuators.Led`
+### Actuators
 
-| Member                                                           | Description                                                        |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `Led(pin=13)`                                                    | Create a virtual LED bound to an Arduino pin.                      |
-| `on()` / `off()`                                                 | Turn LED fully on/off.                                             |
-| `toggle()`                                                       | Flip between on/off.                                               |
-| `get_state()`                                                    | `True` if LED is currently on.                                     |
-| `get_brightness()` / `set_brightness(v)`                         | PWM level (0–255) read/write. Raises `ValueError` if out of range. |
-| `blink(duration_ms, times=1)`                                    | Blink helper with internal waits.                                  |
-| `fade_in(step=5, delay_ms=10)` / `fade_out(step=5, delay_ms=10)` | Gradual brightness ramp.                                           |
-| `flash_pattern(pattern, delay_ms=200)`                           | Iterate over `[0/1 or 0–255]` values.                              |
+#### LED
 
-**Example**
-
-```python
-from Reduino.Actuators import Led
-led = Led(5)
-led.set_brightness(128)
-led.blink(250, times=3)
-```
-
-### `Reduino.Sensors.Ultrasonic`
-
-| Member                                                      | Description |
-| ----------------------------------------------------------- | ----------- |
-| `Ultrasonic(trig, echo, sensor="HC-SR04", *, distance_provider=None, default_distance=0.0)` | Factory returning an ultrasonic sensor helper. Only the `HC-SR04` model is supported today; the selector is reserved for future expansion. |
-| `UltrasonicSensor.measure_distance()`                        | Return the simulated distance reading (centimetres). Uses the optional provider when supplied, otherwise falls back to `default_distance`. |
-
-The generated HC-SR04 helpers throttle trigger pulses to the recommended 60 ms interval, retry short reads, and reuse the most recent valid distance (or 400 cm when none exist yet) whenever the sensor reports a timeout. This prevents spurious zero-centimetre results that can occur when the module is polled too quickly.
-
-> [!NOTE]
-> HC-SR04 helpers wait at least 60 ms between trigger pulses, retry up to three reads when `pulseIn()` reports zero microseconds, and only reuse a cached value after a successful measurement. When no reading has ever succeeded they fall back to the sensor's approximate maximum range (400 cm).
-
-**Example**
-
-```python
-from Reduino.Sensors import Ultrasonic
-
-sensor = Ultrasonic(trig=7, echo=6)
-reading = sensor.measure_distance()
-```
-
-### `Reduino.Utils.sleep`
-
-| Member                        | Description                                                |
-| ----------------------------- | ---------------------------------------------------------- |
-| `sleep(ms, sleep_func=None)` | Delay helper; custom `sleep_func` is injectable for tests. |
-
-**Example**
-
-```python
-from Reduino.Utils import sleep
-
-sleep(500)
-```
-
-### `Reduino.target`
-
-| Member                      | Description                                                                                                                                                         |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `target(port, upload=True)` | Transpile the current module; return generated C++. If `upload` is true, also build & flash via PlatformIO. The last call wins if used multiple times at top level. |
+| Method                                                           | Description                       |
+| ---------------------------------------------------------------- | --------------------------------- |
+| `Led(pin=13)`                                                    | Bind an LED to a digital/PWM pin. |
+| `on()` / `off()`                                                 | Turn fully on/off.                |
+| `toggle()`                                                       | Flip state.                       |
+| `get_state()`                                                    | `True` if on.                     |
+| `get_brightness()` / `set_brightness(v)`                         | PWM 0–255.                        |
+| `blink(duration_ms, times=1)`                                    | Blink helper.                     |
+| `fade_in(step=5, delay_ms=10)` / `fade_out(step=5, delay_ms=10)` | Smooth ramp.                      |
+| `flash_pattern(pattern, delay_ms=200)`                           | Run pattern of 0 & 1s eg: `[1,0,0,1,1,1]`.  |
 
 **Example**
 
 ```python
 from Reduino import target
-cpp = target("/dev/ttyACM0", upload=False)
-print(cpp)
+target("COM3")
+
+from Reduino.Actuators import Led
+from Reduino.Utils import sleep
+
+led = Led(9)
+led.set_brightness(128)
+led.blink(200, times=3)
+sleep(500)
+led.off()
 ```
 
-### `Reduino.Utils`
+---
 
-`Reduino.Utils` collects helper utilities that complement the core transpiler
-APIs. They are designed to be imported piecemeal:
+#### RGB LED
+
+| Method                                  | Description                 |
+| --------------------------------------- | --------------------------- |
+| `RGBLed(r_pin, g_pin, b_pin)`           | Bind RGB to three PWM pins. |
+| `set_color(r,g,b)`                      | Set color (0–255 each).     |
+| `on(r=255,g=255,b=255)` / `off()`       | White / off.                |
+| `fade(r,g,b,duration_ms=1000,steps=50)` | Transition to target color. |
+| `blink(r,g,b,times=1,delay_ms=200)`     | Blink with color.           |
+
+**Example**
 
 ```python
-from Reduino.Utils import sleep, map
+from Reduino import target
+target("COM3")
+
+from Reduino.Actuators import RGBLed
+from Reduino.Utils import sleep
+
+rgb = RGBLed(9, 10, 11)
+rgb.set_color(0, 128, 255)
+rgb.fade(255, 0, 0, duration_ms=1500)
+sleep(300)
+rgb.off()
 ```
 
-### `Reduino.Communication.SerialMonitor`
+---
 
-| Member                                                   | Description                                                                 |
-| -------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `SerialMonitor(baud_rate=9600, port=None, timeout=1.0)`   | Configure an Arduino-style serial console. Optionally auto-connect to `port`. |
-| `connect(port)`                                          | Open a host-side serial connection using the configured baud rate.          |
-| `close()`                                                | Tear down the active serial connection if one exists.                       |
-| `write(value)`                                           | Send text to the MCU. Returns the string sent (without newline).            |
-| `read()`                                                 | Read the next message from the MCU and echo it to stdout. Returns the text. |
+#### Buzzer
 
-**Usage pattern**
+| Method                                                 | Description           |
+| ------------------------------------------------------ | --------------------- |
+| `Buzzer(pin=8, default_frequency=440.0)`               | Create buzzer.        |
+| `play_tone(frequency, duration_ms=None)`               | Play tone.            |
+| `stop()`                                               | Stop sound.           |
+| `beep(frequency=None, on_ms=100, off_ms=100, times=1)` | Repeated tone.        |
+| `sweep(start_hz, end_hz, duration_ms, steps=10)`       | Sweep frequencies.    |
+| `melody(name, tempo=None)`                             | Play built-in melody. |
+
+**Built-in melodies**: `success`, `error`, `startup`, `notify`, `alarm`, `scale_c`, `siren`
+
+**Example**
+
+```python
+from Reduino import target
+target("COM3")
+
+from Reduino.Actuators import Buzzer
+from Reduino.Utils import sleep
+
+bz = Buzzer(8)
+bz.melody("startup")
+sleep(500)
+bz.beep(frequency=880, on_ms=100, off_ms=100, times=3)
+bz.stop()
+```
+
+---
+
+#### Servo
+
+| Method                                                                          | Description                    |
+| ------------------------------------------------------------------------------- | ------------------------------ |
+| `Servo(pin=9, min_angle=0, max_angle=180, min_pulse_us=544, max_pulse_us=2400)` | Create servo.                  |
+| `write(angle)`                                                                  | Move to degrees (clamped).     |
+| `write_us(pulse)`                                                               | Move by pulse width (clamped). |
+
+**Example**
+
+```python
+from Reduino import target
+target("COM3")
+
+from Reduino.Actuators import Servo
+from Reduino.Utils import sleep
+
+s = Servo(9)
+s.write(90)
+sleep(500)
+s.write(0)
+```
+
+---
+
+### Sensors
+
+#### Button
+
+| Method                                            | Description                                  |
+| ------------------------------------------------- | -------------------------------------------- |
+| `Button(pin, on_click=None, state_provider=None)` | Digital input w/ optional callback/provider. |
+| `is_pressed()`                                    | `1` if pressed else `0`.                     |
+
+**Example**
+
+```python
+from Reduino import target
+from Reduino.Actuators import Led
+from Reduino.Sensors import Button
+
+target("COM3")
+
+led = Led(6)
+btn = Button(7)
+if btn.is_pressed():
+    led.toggle()
+```
+
+---
+
+#### Potentiometer
+
+| Method                                         | Description     |
+| ---------------------------------------------- | --------------- |
+| `Potentiometer(pin="A0", value_provider=None)` | Analog helper.  |
+| `read()`                                       | 0–1023 integer. |
+
+**Example**
 
 ```python
 from Reduino import target
 from Reduino.Communication import SerialMonitor
+target("COM3")
 
-monitor = SerialMonitor(baud_rate=115200)
-monitor.connect("/dev/ttyACM0")  # requires the optional 'pyserial' dependency
+from Reduino.Sensors import Potentiometer
 
-cpp = target("/dev/ttyACM0", upload=True)
-print("Generated C++:\n", cpp)
+mon = SerialMonitor(9600 , "COM3")
+pot = Potentiometer("A0")
 
-monitor.write("hello from host")
-message = monitor.read()
+while True:
+  value = pot.read()
+  mon.write(value)
 ```
-
-Call `monitor.close()` when you no longer need the serial session. When
-running on a system without `pyserial` installed, instantiate the monitor
-without calling `connect` until the dependency is available.
-
-
-## Supported Python features
-
-**Control flow**
-
-* `while True:` becomes the Arduino `loop()` body.
-* `for` over `range(...)`, lists/tuples, or generator expressions.
-* `if` / `elif` / `else`, ternaries, `break`/`continue`.
-
-**Variables & assignment**
-
-* Regular assignment, tuple unpacking, pythonic swap `a, b = b, a`.
-* Augmented ops (`+=`, `-=`, ...). Branch-local vars are promoted safely.
-
-**Collections & comprehensions**
-
-* Lists/tuples/dicts, membership tests, list methods (`append`, `extend`, ...).
-* List comps & generators (evaluated eagerly into temps for safety).
-
-**Functions & expressions**
-
-* `def`/`return`, defaults, lambdas (on supported expressions).
-* Literals: int/float/str/bool; casts: `int/float/bool/str`.
-* Built-ins: `len`, `abs`, `max`, `min`, `sum`, `range`.
-
-**Device primitives**
-
-* LED pin init creates `pinMode`; actions become `digitalWrite`/PWM; sleeps become `delay(ms)`.
-* Ultrasonic `HC-SR04` sensors configure trig/echo pins and emit helper functions for `measure_distance()`.
-
-**Target directive**
-
-* `target("PORT")` can appear anywhere at top level; the last call wins and is written to `platformio.ini`.
-
-## Testing
-
-```bash
-pip install pytest
-pytest
-```
-
-The suite covers parsing, emission, runtime helpers, and public primitives.
-
-## Contributing
-
-PRs for new actuators/sensors and transpiler improvements are welcome. See **CONTRIBUTING.md** for guidelines and the IR/emitter architecture.
-
-## License
-
-Reduino is distributed under **GPL-3.0**.
-
-You may:
-
-* Use, modify, and distribute under GPL-3.0.
-* Build upon it in your open-source projects (derivatives must also be GPL-3.0).
-
-For **closed-source** or **commercial** use, dual/custom licensing is available.
-
-**Commercial inquiries:** [arnavbajaj9@gmail.com](mailto:arnavbajaj9@gmail.com)
 
 ---
 
-© 2025 Arnav Bajaj. All rights reserved.
+#### Ultrasonic
+
+| Method                                                                                   | Description                                |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `Ultrasonic(trig, echo, sensor="HC-SR04", distance_provider=None, default_distance=0.0)` | HC-SR04 factory.                           |
+| `measure_distance()`                                                                     | Distance in cm (handles timeouts/backoff). |
+
+**Example**
+
+```python
+from Reduino import target
+target("COM3")
+
+from Reduino.Sensors import Ultrasonic
+from Reduino.Utils import sleep
+
+u = Ultrasonic(trig=9, echo=10)
+d = u.measure_distance()
+print(d)
+sleep(60)
+```
+
+---
+
+### Communication
+
+#### SerialMonitor
+
+| Method                                                  | Description                        |
+| ------------------------------------------------------- | ---------------------------------- |
+| `SerialMonitor(baud_rate=9600, port=None, timeout=1.0)` | Host-side serial console.          |
+| `connect(port)`                                         | Open serial (requires `pyserial`). |
+| `close()`                                               | Close port.                        |
+| `write(value)`                                          | Send text.                         |
+| `read()`                                                | Read text.                         |
+
+**Example (host-side)**
+
+```python
+from Reduino import target
+target("COM3")
+
+from Reduino.Communication import SerialMonitor
+
+mon = SerialMonitor(baud_rate=115200, port="COM4")
+
+while True:
+  mon.write("hello")
+  mon.read()
+  mon.close()
+```
+
+> [!NOTE]
+> `pyserial` is optional; only needed if you call `connect()`.
+
+---
+
+### Utilities
+
+#### sleep
+
+```python
+from Reduino import target
+target("COM3")
+
+from Reduino.Utils import sleep
+sleep(250)  # ms
+```
+
+#### map
+
+```python
+from Reduino import target
+target("COM3")
+
+from Reduino.Utils import map
+mapped = map(512, 0, 1023, 0.0, 5.0)  # 2.5-ish
+print(mapped)
+```
+
+---
+
+## Supported Python features
+
+Reduino implements a pragmatic subset of Python that cleanly lowers to Arduino C++.
+
+### Control flow
+
+* `while True:` ➜ Arduino `loop()`
+* `for x in range(...)`, including `range(start, stop, step)`
+* `if / elif / else`, `break`, `continue`, `try/except` (mapped to C++ try/catch where used)
+
+### Variables & assignment
+
+* Standard assignment and **pythonic swap**:
+
+  ```python
+  a, b = b, a
+  ```
+* Multiple assignment & tuple unpacking
+* Augmented ops (`+=`, `-=`, `*=`, etc.)
+
+### Collections
+
+* **Lists** (`[]`), tuples (`()`), and membership checks (`x in items`)
+* **List comprehensions**:
+
+  ```python
+  squares = [i for i in range(10)]
+  ```
+* `len()` on strings, lists, and internal list type
+
+### Built-ins
+
+* `len()`, `abs()`, `max()`, `min()`
+* `print()` maps to serial printing in emitted code when serial is configured
+
+> [!TIP]
+> Many constant expressions are folded at transpile time for smaller, faster C++.
+
+---
+
+## License
+
+Reduino is distributed under the **GNU General Public License v3.0 (GPLv3)**.  
+You are free to use, modify, and distribute this software for personal or educational purposes,  
+as long as derivative works remain open-source and licensed under the same terms.
+
+For commercial usage, redistribution, or integration into closed-source systems,  
+please contact me at arnavbajaj9@gmail.com for alternative licensing options.
+
+See [LICENSE](https://www.gnu.org/licenses/gpl-3.0) for full details.
