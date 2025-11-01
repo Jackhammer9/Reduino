@@ -304,7 +304,7 @@ def test_parser_button_is_pressed_uses_cached_value(src) -> None:
     )
 
 
-def test_parser_does_not_promote_while_true_when_button_present(src) -> None:
+def test_parser_promotes_while_true_body_with_button(src) -> None:
     code = src(
         """
         from Reduino.Actuators import Led
@@ -323,5 +323,9 @@ def test_parser_does_not_promote_while_true_when_button_present(src) -> None:
     polls = [node for node in program.loop_body if isinstance(node, ButtonPoll)]
     assert polls and polls[0].name == "btn"
 
-    while_loops = [node for node in program.setup_body if isinstance(node, WhileLoop)]
-    assert while_loops, "while True should remain in setup when a button exists"
+    toggle_ops = [node for node in program.loop_body if isinstance(node, LedToggle)]
+    assert toggle_ops, "while True body should be emitted into loop()"
+
+    assert not any(
+        isinstance(node, WhileLoop) for node in program.setup_body
+    ), "while True should not remain as a literal loop in setup()"

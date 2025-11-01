@@ -3059,11 +3059,7 @@ def parse(src: str) -> Program:
             i += 1; continue
 
         # controls
-        if (
-            _indent_of(raw) == 0
-            and RE_WHILE_TRUE.match(text)
-            and not ctx.get("button_force_loop", False)
-        ):
+        if _indent_of(raw) == 0 and RE_WHILE_TRUE.match(text):
             block, i = _collect_block(lines, i)
             loop_body.extend(
                 _parse_simple_lines(

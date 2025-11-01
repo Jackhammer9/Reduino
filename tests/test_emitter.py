@@ -84,6 +84,33 @@ def test_emit_button_generates_polling_loop(src, norm) -> None:
     assert "__redu_button_value_btn = __redu_button_next_btn;" in loop_section
 
 
+def test_emit_button_with_while_true_avoids_nested_loop(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Actuators import Led
+            from Reduino.Sensors import Button
+
+            led = Led()
+
+            def on_press():
+                led.toggle()
+
+            btn = Button(pin=2, on_click=on_press)
+
+            while True:
+                led.off()
+            """
+        )
+    )
+
+    text = norm(cpp)
+    assert "while (true)" not in text
+    loop_section = cpp.split("void loop()", 1)[1]
+    assert "digitalWrite(13, LOW);" in loop_section
+    assert loop_section.count("on_press();") == 1
+
+
 def test_emit_handles_led_and_rgb_led_actions(src, norm) -> None:
     cpp = compile_source(
         src(
