@@ -111,6 +111,23 @@ def test_emit_button_with_while_true_avoids_nested_loop(src, norm) -> None:
     assert loop_section.count("on_press();") == 1
 
 
+def test_emit_potentiometer_reads_analog_value(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Sensors import Potentiometer
+
+            pot = Potentiometer("A0")
+            value = pot.read()
+            """
+        )
+    )
+
+    setup_section = cpp.split("void setup() {", 1)[1].split("void loop()", 1)[0]
+    assert "pinMode(A0, INPUT);" in setup_section
+    assert "value = analogRead(A0);" in cpp
+
+
 def test_emit_handles_led_and_rgb_led_actions(src, norm) -> None:
     cpp = compile_source(
         src(

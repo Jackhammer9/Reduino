@@ -42,6 +42,7 @@ from .ast import (
     VarAssign,
     VarDecl,
     WhileLoop,
+    PotentiometerDecl,
 )
 
 _BIN = {
@@ -58,6 +59,8 @@ _CMP = {
     ast.Gt: ">",
     ast.GtE: ">=",
 }
+
+ANALOG_PIN_RE = re.compile(r"^A\d+$")
 
 
 def _escape_string_literal(value: str) -> str:
@@ -590,6 +593,17 @@ def _to_c_expr(
                 raise ValueError("unsupported attribute call")
 
             if attr == "read":
+                if isinstance(owner_node, ast.Name) and ctx is not None:
+                    potentiometers = ctx.get("potentiometer_names", set())
+                    if owner_node.id in potentiometers:
+                        if n.args or n.keywords:
+                            raise ValueError("unsupported attribute call")
+                        pins = ctx.get("potentiometer_pins", {})
+                        pin_value = pins.get(owner_node.id)
+                        if pin_value is None:
+                            raise ValueError("unsupported attribute call")
+                        return f"analogRead({pin_value})"
+
                 emit_mode = "both"
 
                 if n.args:
@@ -1154,6 +1168,9 @@ RE_IMPORT_SERIAL  = re.compile(r"^\s*from\s+Reduino\.Utils\s+import\s+SerialMoni
 RE_IMPORT_TARGET  = re.compile(r"^\s*from\s+Reduino\s+import\s+target\s*$")
 RE_IMPORT_ULTRASONIC = re.compile(r"^\s*from\s+Reduino\.Sensors\s+import\s+Ultrasonic\s*$")
 RE_IMPORT_BUTTON  = re.compile(r"^\s*from\s+Reduino\.Sensors\s+import\s+Button\s*$")
+RE_IMPORT_POTENTIOMETER = re.compile(
+    r"^\s*from\s+Reduino\.Sensors\s+import\s+Potentiometer\s*$"
+)
 
 # Led Primitives
 RE_ASSIGN     = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*(.+)$")
@@ -1161,6 +1178,9 @@ RE_LED_DECL   = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Led\s*\(\s*(.*?)\s*\)\s*$"
 RE_RGB_LED_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*RGBLed\s*\(\s*(.*?)\s*\)\s*$")
 RE_ULTRASONIC_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Ultrasonic\s*\(\s*(.*?)\s*\)\s*$")
 RE_BUTTON_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Button\s*\(\s*(.*?)\s*\)\s*$")
+RE_POTENTIOMETER_DECL = re.compile(
+    r"^\s*([A-Za-z_]\w*)\s*=\s*Potentiometer\s*\(\s*(.*?)\s*\)\s*$"
+)
 RE_LED_ON         = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.on\(\s*\)\s*$")
 RE_LED_OFF        = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.off\(\s*\)\s*$")
 RE_LED_TOGGLE     = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.toggle\(\s*\)\s*$")
@@ -2021,6 +2041,49 @@ def _parse_simple_lines(
         inline_matches = list(RE_TARGET_INLINE.finditer(line))
         if inline_matches:
             ctx["target_port"] = inline_matches[-1].group(1)
+            i += 1
+            continue
+
+        m = RE_POTENTIOMETER_DECL.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            pin_arg = _extract_call_argument(args_src, keyword="pin")
+            if pin_arg is None:
+                pin_arg = _extract_call_argument(args_src)
+            if pin_arg is None or not pin_arg.strip():
+                raise ValueError("Potentiometer requires a pin argument")
+
+            def _resolve_pot_pin(src_text: str) -> str:
+                text = src_text.strip()
+                try:
+                    expr_ast = ast.parse(text, mode="eval").body
+                except Exception as exc:  # pragma: no cover - defensive
+                    raise ValueError(
+                        "Potentiometer pin must be an analogue pin literal like A0"
+                    ) from exc
+
+                candidate: Optional[str]
+                if isinstance(expr_ast, ast.Constant) and isinstance(expr_ast.value, str):
+                    candidate = expr_ast.value
+                elif isinstance(expr_ast, ast.Name):
+                    candidate = expr_ast.id
+                else:
+                    raise ValueError(
+                        "Potentiometer pin must be an analogue pin literal like A0"
+                    )
+
+                if not ANALOG_PIN_RE.fullmatch(candidate.strip()):
+                    raise ValueError(
+                        "Potentiometer pin must be an analogue pin literal like A0"
+                    )
+                return candidate.strip()
+
+            pin_value = _resolve_pot_pin(pin_arg)
+
+            ctx.setdefault("potentiometer_names", set()).add(name)
+            ctx.setdefault("potentiometer_pins", {})[name] = pin_value
+            vars[name] = _ExprStr(name)
+            body.append(PotentiometerDecl(name=name, pin=pin_value))
             i += 1
             continue
 
@@ -3025,6 +3088,8 @@ def parse(src: str) -> Program:
         "button_callbacks": {},
         "button_poll_names": set(),
         "button_force_loop": False,
+        "potentiometer_names": set(),
+        "potentiometer_pins": {},
     }
     ctx["vars"]["_helpers"] = ctx["helpers"]
 
@@ -3055,6 +3120,7 @@ def parse(src: str) -> Program:
             or RE_IMPORT_TARGET.match(text)
             or RE_IMPORT_ULTRASONIC.match(text)
             or RE_IMPORT_BUTTON.match(text)
+            or RE_IMPORT_POTENTIOMETER.match(text)
         ):
             i += 1; continue
 

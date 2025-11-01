@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from Reduino.Sensors import Button, HCSR04UltrasonicSensor, Ultrasonic, UltrasonicSensor
+from Reduino.Sensors import (
+    Button,
+    HCSR04UltrasonicSensor,
+    Potentiometer,
+    Ultrasonic,
+    UltrasonicSensor,
+)
 
 
 def test_factory_defaults_to_hcsr04() -> None:
@@ -91,3 +97,29 @@ def test_button_invokes_callback_on_press() -> None:
 def test_button_validates_pin_type() -> None:
     with pytest.raises(TypeError):
         Button("A0")  # type: ignore[arg-type]
+
+
+def test_potentiometer_defaults_to_zero() -> None:
+    pot = Potentiometer("A0")
+    assert pot.read() == 0
+
+
+def test_potentiometer_uses_provider() -> None:
+    pot = Potentiometer("A1", value_provider=lambda: 900)
+    assert pot.read() == 900
+
+
+def test_potentiometer_validates_provider_values() -> None:
+    pot = Potentiometer("A2", value_provider=lambda: 2048)
+    with pytest.raises(ValueError):
+        pot.read()
+
+
+def test_potentiometer_validates_pin_type() -> None:
+    with pytest.raises(TypeError):
+        Potentiometer(0)  # type: ignore[arg-type]
+
+
+def test_potentiometer_validates_pin_format() -> None:
+    with pytest.raises(ValueError):
+        Potentiometer("D3")
