@@ -16,6 +16,12 @@ from .ast import (
     ExprStmt,
     ForRangeLoop,
     FunctionDef,
+    BuzzerBeep,
+    BuzzerDecl,
+    BuzzerMelody,
+    BuzzerPlayTone,
+    BuzzerStop,
+    BuzzerSweep,
     IfStatement,
     LedBlink,
     LedDecl,
@@ -557,6 +563,9 @@ def _to_c_expr(
                     led_names = ctx.get("led_names", set())
                     if owner_node.id in led_names:
                         return f"__state_{owner_node.id}"
+                    buzzer_names = ctx.get("buzzer_names", set())
+                    if owner_node.id in buzzer_names:
+                        return f"__buzzer_state_{owner_node.id}"
                 raise ValueError("unsupported attribute call")
 
             if attr == "get_brightness":
@@ -566,6 +575,24 @@ def _to_c_expr(
                     led_names = ctx.get("led_names", set())
                     if owner_node.id in led_names:
                         return f"__brightness_{owner_node.id}"
+                raise ValueError("unsupported attribute call")
+
+            if attr == "get_frequency":
+                if n.args or n.keywords:
+                    raise ValueError("unsupported attribute call")
+                if isinstance(owner_node, ast.Name) and ctx is not None:
+                    buzzer_names = ctx.get("buzzer_names", set())
+                    if owner_node.id in buzzer_names:
+                        return f"__buzzer_current_{owner_node.id}"
+                raise ValueError("unsupported attribute call")
+
+            if attr == "get_last_frequency":
+                if n.args or n.keywords:
+                    raise ValueError("unsupported attribute call")
+                if isinstance(owner_node, ast.Name) and ctx is not None:
+                    buzzer_names = ctx.get("buzzer_names", set())
+                    if owner_node.id in buzzer_names:
+                        return f"__buzzer_last_{owner_node.id}"
                 raise ValueError("unsupported attribute call")
 
             if attr == "measure_distance":
@@ -1194,6 +1221,7 @@ def _merge_return_types(types: List[str], has_void: bool) -> str:
 RE_IMPORT_LED     = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+Led\s*$")
 RE_IMPORT_RGB_LED = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+RGBLed\s*$")
 RE_IMPORT_SERVO   = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+Servo\s*$")
+RE_IMPORT_BUZZER  = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+Buzzer\s*$")
 RE_IMPORT_SLEEP   = re.compile(r"^\s*from\s+Reduino\.Utils\s+import\s+sleep\s*$")
 RE_IMPORT_SERIAL  = re.compile(r"^\s*from\s+Reduino\.Communication\s+import\s+SerialMonitor\s*$")
 RE_IMPORT_TARGET  = re.compile(r"^\s*from\s+Reduino\s+import\s+target\s*$")
@@ -1206,6 +1234,7 @@ RE_IMPORT_POTENTIOMETER = re.compile(
 # Led Primitives
 RE_ASSIGN     = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*(.+)$")
 RE_LED_DECL   = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Led\s*\(\s*(.*?)\s*\)\s*$")
+RE_BUZZER_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Buzzer\s*\(\s*(.*?)\s*\)\s*$")
 RE_RGB_LED_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*RGBLed\s*\(\s*(.*?)\s*\)\s*$")
 RE_SERVO_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Servo\s*\(\s*(.*?)\s*\)\s*$")
 RE_ULTRASONIC_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Ultrasonic\s*\(\s*(.*?)\s*\)\s*$")
@@ -1221,6 +1250,11 @@ RE_LED_BLINK      = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.blink\(\s*(.*)\s*\)\s*$"
 RE_LED_FADE_IN    = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.fade_in\(\s*(.*)\s*\)\s*$")
 RE_LED_FADE_OUT   = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.fade_out\(\s*(.*)\s*\)\s*$")
 RE_LED_FLASH_PATTERN = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.flash_pattern\(\s*(.*)\s*\)\s*$")
+RE_BUZZER_PLAY_TONE  = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.play_tone\(\s*(.*)\s*\)\s*$")
+RE_BUZZER_STOP       = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.stop\(\s*\)\s*$")
+RE_BUZZER_BEEP       = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.beep\(\s*(.*)\s*\)\s*$")
+RE_BUZZER_SWEEP      = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.sweep\(\s*(.*)\s*\)\s*$")
+RE_BUZZER_MELODY     = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.melody\(\s*(.*)\s*\)\s*$")
 RE_RGB_LED_ON        = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.on\(\s*(.*)\s*\)\s*$")
 RE_RGB_LED_OFF       = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.off\(\s*\)\s*$")
 RE_RGB_LED_SET_COLOR = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.set_color\(\s*(.*)\s*\)\s*$")
@@ -1228,6 +1262,16 @@ RE_RGB_LED_FADE      = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.fade\(\s*(.*)\s*\)\s*
 RE_RGB_LED_BLINK     = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.blink\(\s*(.*)\s*\)\s*$")
 RE_SERVO_WRITE       = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.write\(\s*(.*)\s*\)\s*$")
 RE_SERVO_WRITE_US    = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.write_us\(\s*(.*)\s*\)\s*$")
+
+_BUZZER_MELODIES = {
+    "success",
+    "error",
+    "startup",
+    "notify",
+    "alarm",
+    "scale_c",
+    "siren",
+}
 
 # Serial primitives
 RE_SERIAL_DECL    = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*SerialMonitor\s*\(\s*(.*?)\s*\)\s*$")
@@ -1535,6 +1579,9 @@ def _handle_assignment_ast(
     def is_servo_call(n: ast.AST) -> bool:
         return isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "Servo"
 
+    def is_buzzer_call(n: ast.AST) -> bool:
+        return isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "Buzzer"
+
     def is_serial_monitor_call(n: ast.AST) -> bool:
         return (
             isinstance(n, ast.Call)
@@ -1549,6 +1596,7 @@ def _handle_assignment_ast(
         is_led_call(value)
         or is_rgb_led_call(value)
         or is_servo_call(value)
+        or is_buzzer_call(value)
         or is_serial_monitor_call(value)
         or is_ultrasonic_call(value)
     ):
@@ -1558,6 +1606,7 @@ def _handle_assignment_ast(
             is_led_call(elt)
             or is_rgb_led_call(elt)
             or is_servo_call(elt)
+            or is_buzzer_call(elt)
             or is_serial_monitor_call(elt)
             or is_ultrasonic_call(elt)
             for elt in value.elts
@@ -1981,6 +2030,7 @@ def _parse_simple_lines(
     list_info = ctx.setdefault("list_info", {})
     rgb_led_names = ctx.setdefault("rgb_led_names", set())
     servo_names = ctx.setdefault("servo_names", set())
+    buzzer_names = ctx.setdefault("buzzer_names", set())
     button_names = ctx.setdefault("button_names", set())
     button_pins = ctx.setdefault("button_pins", {})
     button_callbacks = ctx.setdefault("button_callbacks", {})
@@ -2043,6 +2093,7 @@ def _parse_simple_lines(
             RE_IMPORT_LED.match(line)
             or RE_IMPORT_RGB_LED.match(line)
             or RE_IMPORT_SERVO.match(line)
+            or RE_IMPORT_BUZZER.match(line)
             or RE_IMPORT_SLEEP.match(line)
             or RE_IMPORT_SERIAL.match(line)
             or RE_IMPORT_TARGET.match(line)
@@ -2628,6 +2679,50 @@ def _parse_simple_lines(
             i += 1
             continue
 
+        m = RE_BUZZER_DECL.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            pin_arg = _extract_call_argument(args_src, keyword="pin")
+            if pin_arg is None:
+                pin_arg = _extract_call_argument(args_src)
+            pin_value: Union[int, str] = 8
+            if pin_arg and pin_arg.strip():
+                try:
+                    expr_ast = ast.parse(pin_arg, mode="eval").body
+                except Exception:
+                    expr_ast = None
+                handled = False
+                if expr_ast is not None and not _expr_has_name(expr_ast):
+                    try:
+                        value = _eval_const(pin_arg, vars)
+                    except Exception:
+                        pass
+                    else:
+                        if isinstance(value, bool):
+                            pin_value = 1 if value else 0
+                            handled = True
+                        elif isinstance(value, (int, float)):
+                            pin_value = int(value)
+                            handled = True
+                if not handled:
+                    pin_value = _to_c_expr(pin_arg, vars, ctx)
+
+            default_arg = _extract_call_argument(args_src, keyword="default_frequency")
+            default_frequency: Union[float, int, str] = 440.0
+            if default_arg and default_arg.strip():
+                default_frequency = _resolve_float_arg(default_arg, 440.0)
+
+            body.append(
+                BuzzerDecl(
+                    name=name,
+                    pin=pin_value,
+                    default_frequency=default_frequency,
+                )
+            )
+            buzzer_names.add(name)
+            i += 1
+            continue
+
         m = RE_SERVO_DECL.match(line)
         if m:
             name, args_src = m.group(1), m.group(2)
@@ -3080,6 +3175,145 @@ def _parse_simple_lines(
                     _coerce_pattern(resolved)
             delay_val = _resolve_numeric_arg(delay_arg, 200)
             body.append(LedFlashPattern(name=name, pattern=pattern_values, delay_ms=delay_val))
+            i += 1
+            continue
+
+        m = RE_BUZZER_PLAY_TONE.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            freq_arg = _extract_call_argument(args_src, keyword="frequency")
+            freq_from_position = False
+            if freq_arg is None:
+                freq_arg = _extract_call_argument(args_src)
+                if freq_arg is not None:
+                    freq_from_position = True
+            if freq_arg is None or not freq_arg.strip():
+                raise ValueError("play_tone requires a frequency")
+            frequency = _resolve_float_arg(freq_arg, 0.0)
+            duration_arg = _extract_call_argument(args_src, keyword="duration_ms")
+            if duration_arg is None:
+                pos_index = 1 if freq_from_position else 0
+                duration_arg = _extract_call_argument(args_src, position=pos_index)
+            duration: Optional[Union[float, int, str]] = None
+            if duration_arg is not None and duration_arg.strip():
+                duration = _resolve_float_arg(duration_arg, 0.0)
+            body.append(
+                BuzzerPlayTone(name=name, frequency=frequency, duration_ms=duration)
+            )
+            i += 1
+            continue
+
+        m = RE_BUZZER_STOP.match(line)
+        if m:
+            body.append(BuzzerStop(name=m.group(1)))
+            i += 1
+            continue
+
+        m = RE_BUZZER_BEEP.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            freq_arg = _extract_call_argument(args_src, keyword="frequency")
+            freq_from_position = False
+            if freq_arg is None:
+                freq_arg = _extract_call_argument(args_src)
+                if freq_arg is not None:
+                    freq_from_position = True
+            frequency: Optional[Union[float, int, str]] = None
+            if freq_arg is not None and freq_arg.strip():
+                frequency = _resolve_float_arg(freq_arg, 0.0)
+            on_arg = _extract_call_argument(args_src, keyword="on_ms")
+            if on_arg is None:
+                position = 1 if freq_from_position else 0
+                on_arg = _extract_call_argument(args_src, position=position)
+            off_arg = _extract_call_argument(args_src, keyword="off_ms")
+            if off_arg is None:
+                position = 2 if freq_from_position else 1
+                off_arg = _extract_call_argument(args_src, position=position)
+            times_arg = _extract_call_argument(args_src, keyword="times")
+            if times_arg is None:
+                position = 3 if freq_from_position else 2
+                times_arg = _extract_call_argument(args_src, position=position)
+            on_ms = _resolve_float_arg(on_arg, 100) if on_arg else 100
+            off_ms = _resolve_float_arg(off_arg, 100) if off_arg else 100
+            times = _resolve_numeric_arg(times_arg, 1)
+            body.append(
+                BuzzerBeep(
+                    name=name,
+                    frequency=frequency,
+                    on_ms=on_ms,
+                    off_ms=off_ms,
+                    times=times,
+                )
+            )
+            i += 1
+            continue
+
+        m = RE_BUZZER_SWEEP.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            start_arg = _extract_call_argument(args_src, keyword="start_hz")
+            if start_arg is None:
+                start_arg = _extract_call_argument(args_src)
+            if start_arg is None or not start_arg.strip():
+                raise ValueError("sweep requires a start frequency")
+            end_arg = _extract_call_argument(args_src, keyword="end_hz")
+            if end_arg is None:
+                end_arg = _extract_call_argument(args_src, position=1)
+            if end_arg is None or not end_arg.strip():
+                raise ValueError("sweep requires an end frequency")
+            duration_arg = _extract_call_argument(args_src, keyword="duration_ms")
+            if duration_arg is None:
+                duration_arg = _extract_call_argument(args_src, position=2)
+            if duration_arg is None or not duration_arg.strip():
+                raise ValueError("sweep requires duration_ms")
+            steps_arg = _extract_call_argument(args_src, keyword="steps")
+            if steps_arg is None:
+                steps_arg = _extract_call_argument(args_src, position=3)
+            start_val = _resolve_float_arg(start_arg, 0.0)
+            end_val = _resolve_float_arg(end_arg, 0.0)
+            duration_val = _resolve_float_arg(duration_arg, 0.0)
+            steps_val = _resolve_numeric_arg(steps_arg, 10)
+            body.append(
+                BuzzerSweep(
+                    name=name,
+                    start_hz=start_val,
+                    end_hz=end_val,
+                    duration_ms=duration_val,
+                    steps=steps_val,
+                )
+            )
+            i += 1
+            continue
+
+        m = RE_BUZZER_MELODY.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            melody_arg = _extract_call_argument(args_src, keyword="name")
+            if melody_arg is None:
+                melody_arg = _extract_call_argument(args_src)
+            if melody_arg is None or not melody_arg.strip():
+                raise ValueError("melody requires a name")
+            try:
+                melody_ast = ast.parse(melody_arg, mode="eval").body
+            except Exception as exc:
+                raise ValueError("melody name must be a string literal") from exc
+            if not (
+                isinstance(melody_ast, ast.Constant)
+                and isinstance(melody_ast.value, str)
+            ):
+                raise ValueError("melody name must be a string literal")
+            melody_name = melody_ast.value.lower()
+            if melody_name not in _BUZZER_MELODIES:
+                raise ValueError(f"unknown melody '{melody_name}'")
+            tempo_arg = _extract_call_argument(args_src, keyword="tempo")
+            if tempo_arg is None:
+                tempo_arg = _extract_call_argument(args_src, position=1)
+            tempo_value: Optional[Union[float, int, str]] = None
+            if tempo_arg is not None and tempo_arg.strip():
+                tempo_value = _resolve_float_arg(tempo_arg, 0.0)
+            body.append(
+                BuzzerMelody(name=name, melody=melody_name, tempo=tempo_value)
+            )
             i += 1
             continue
 

@@ -11,6 +11,12 @@ from .ast import (
     ExprStmt,
     ForRangeLoop,
     FunctionDef,
+    BuzzerBeep,
+    BuzzerDecl,
+    BuzzerMelody,
+    BuzzerPlayTone,
+    BuzzerStop,
+    BuzzerSweep,
     IfStatement,
     LedBlink,
     LedDecl,
@@ -208,16 +214,83 @@ SETUP_END = "}\n\n"
 LOOP_START = "void loop() {\n"
 LOOP_END = "}\n"
 
-def _emit_expr(v: Union[int, str]) -> str:
+def _emit_expr(v: Union[int, float, str]) -> str:
     """Render an integer literal or a pre-formatted expression string."""
 
     return str(v)
+
+
+def _format_float(value: float) -> str:
+    """Format a float literal suitable for C++ source emission."""
+
+    text = f"{float(value):.6f}".rstrip("0").rstrip(".")
+    if "e" not in text.lower() and "." not in text:
+        text += ".0"
+    return f"{text}f"
+
+
+_BUZZER_MELODIES = {
+    "success": {
+        "tempo": 240.0,
+        "sequence": [(523.25, 0.5), (659.25, 0.5), (783.99, 1.0)],
+    },
+    "error": {"tempo": 200.0, "sequence": [(329.63, 0.5), (261.63, 1.5)]},
+    "startup": {
+        "tempo": 200.0,
+        "sequence": [(261.63, 0.5), (329.63, 0.5), (392.0, 0.5), (523.25, 1.0)],
+    },
+    "notify": {
+        "tempo": 240.0,
+        "sequence": [(783.99, 0.25), (0.0, 0.25), (783.99, 0.5)],
+    },
+    "alarm": {
+        "tempo": 200.0,
+        "sequence": [
+            (523.25, 0.5),
+            (392.0, 0.5),
+            (523.25, 0.5),
+            (392.0, 0.5),
+            (523.25, 0.5),
+            (392.0, 0.5),
+            (523.25, 0.5),
+            (392.0, 0.5),
+        ],
+    },
+    "scale_c": {
+        "tempo": 200.0,
+        "sequence": [
+            (261.63, 0.5),
+            (293.66, 0.5),
+            (329.63, 0.5),
+            (349.23, 0.5),
+            (392.0, 0.5),
+            (440.0, 0.5),
+            (493.88, 0.5),
+            (523.25, 1.0),
+        ],
+    },
+    "siren": {
+        "tempo": 180.0,
+        "sequence": [
+            (659.25, 0.75),
+            (523.25, 0.75),
+            (659.25, 0.75),
+            (523.25, 0.75),
+            (659.25, 0.75),
+            (523.25, 0.75),
+        ],
+    },
+}
 
 def _emit_block(
     nodes: Iterable[object],
     led_pin: Dict[str, Union[int, str]],
     led_state: Dict[str, str],
     led_brightness: Dict[str, str],
+    buzzer_pin: Dict[str, Union[int, str]],
+    buzzer_state: Dict[str, str],
+    buzzer_current: Dict[str, str],
+    buzzer_last: Dict[str, str],
     rgb_led_pins: Dict[str, Tuple[Union[int, str], Union[int, str], Union[int, str]]],
     rgb_led_state: Dict[str, str],
     rgb_led_colors: Dict[str, Tuple[str, str, str]],
@@ -245,6 +318,10 @@ def _emit_block(
                     led_pin,
                     led_state,
                     led_brightness,
+                    buzzer_pin,
+                    buzzer_state,
+                    buzzer_current,
+                    buzzer_last,
                     rgb_led_pins,
                     rgb_led_state,
                     rgb_led_colors,
@@ -302,6 +379,10 @@ def _emit_block(
                     led_pin,
                     led_state,
                     led_brightness,
+                    buzzer_pin,
+                    buzzer_state,
+                    buzzer_current,
+                    buzzer_last,
                     rgb_led_pins,
                     rgb_led_state,
                     rgb_led_colors,
@@ -325,6 +406,10 @@ def _emit_block(
                         led_pin,
                         led_state,
                         led_brightness,
+                        buzzer_pin,
+                        buzzer_state,
+                        buzzer_current,
+                        buzzer_last,
                         rgb_led_pins,
                         rgb_led_state,
                         rgb_led_colors,
@@ -350,6 +435,10 @@ def _emit_block(
                     led_pin,
                     led_state,
                     led_brightness,
+                    buzzer_pin,
+                    buzzer_state,
+                    buzzer_current,
+                    buzzer_last,
                     rgb_led_pins,
                     rgb_led_state,
                     rgb_led_colors,
@@ -377,6 +466,10 @@ def _emit_block(
                     led_pin,
                     led_state,
                     led_brightness,
+                    buzzer_pin,
+                    buzzer_state,
+                    buzzer_current,
+                    buzzer_last,
                     rgb_led_pins,
                     rgb_led_state,
                     rgb_led_colors,
@@ -402,6 +495,10 @@ def _emit_block(
                     led_pin,
                     led_state,
                     led_brightness,
+                    buzzer_pin,
+                    buzzer_state,
+                    buzzer_current,
+                    buzzer_last,
                     rgb_led_pins,
                     rgb_led_state,
                     rgb_led_colors,
@@ -434,6 +531,10 @@ def _emit_block(
                         led_pin,
                         led_state,
                         led_brightness,
+                        buzzer_pin,
+                        buzzer_state,
+                        buzzer_current,
+                        buzzer_last,
                         rgb_led_pins,
                         rgb_led_state,
                         rgb_led_colors,
@@ -484,6 +585,14 @@ def _emit_block(
         if isinstance(node, BreakStmt):
             lines.append(f"{indent}break;")
             continue
+
+        def _ensure_buzzer_tracking(name: str) -> Tuple[str, str, str, str]:
+            pin_value = buzzer_pin.get(name, 8)
+            pin_code = _emit_expr(pin_value)
+            state_var = buzzer_state.setdefault(name, f"__buzzer_state_{name}")
+            current_var = buzzer_current.setdefault(name, f"__buzzer_current_{name}")
+            last_var = buzzer_last.setdefault(name, f"__buzzer_last_{name}")
+            return pin_code, state_var, current_var, last_var
 
         def _ensure_led_tracking(name: str) -> Tuple[str, str, str]:
             pin = led_pin.get(name, 13)
@@ -567,6 +676,21 @@ def _emit_block(
                     emitted_pin_modes = set()
                 pin_expr = _emit_expr(node.pin)
                 key = (node.name, pin_expr)
+                if key not in emitted_pin_modes:
+                    emitted_pin_modes.add(key)
+                    lines.append(f"{indent}pinMode({pin_expr}, OUTPUT);")
+            continue
+
+        if isinstance(node, BuzzerDecl):
+            buzzer_pin[node.name] = node.pin
+            buzzer_state.setdefault(node.name, f"__buzzer_state_{node.name}")
+            buzzer_current.setdefault(node.name, f"__buzzer_current_{node.name}")
+            buzzer_last.setdefault(node.name, f"__buzzer_last_{node.name}")
+            if in_setup:
+                if emitted_pin_modes is None:
+                    emitted_pin_modes = set()
+                pin_expr = _emit_expr(node.pin)
+                key = (node.name, pin_expr, "OUTPUT")
                 if key not in emitted_pin_modes:
                     emitted_pin_modes.add(key)
                     lines.append(f"{indent}pinMode({pin_expr}, OUTPUT);")
@@ -1014,6 +1138,176 @@ def _emit_block(
             lines.append(f"{indent}}}")
             continue
 
+        if isinstance(node, BuzzerPlayTone):
+            pin_code, state_var, current_var, last_var = _ensure_buzzer_tracking(node.name)
+            freq_expr = _emit_expr(node.frequency)
+            lines.append(f"{indent}{{")
+            lines.append(f"{indent}  float __redu_freq = static_cast<float>({freq_expr});")
+            lines.append(f"{indent}  if (__redu_freq < 0.0f) {{ __redu_freq = 0.0f; }}")
+            lines.append(f"{indent}  if (__redu_freq <= 0.0f) {{")
+            lines.append(f"{indent}    {state_var} = false;")
+            lines.append(f"{indent}    {current_var} = 0.0f;")
+            lines.append(f"{indent}    noTone({pin_code});")
+            lines.append(f"{indent}  }} else {{")
+            lines.append(f"{indent}    unsigned int __redu_tone = static_cast<unsigned int>(__redu_freq + 0.5f);")
+            lines.append(f"{indent}    tone({pin_code}, __redu_tone);")
+            lines.append(f"{indent}    {state_var} = true;")
+            lines.append(f"{indent}    {current_var} = __redu_freq;")
+            lines.append(f"{indent}    {last_var} = __redu_freq;")
+            lines.append(f"{indent}  }}")
+            if getattr(node, "duration_ms", None) is not None:
+                duration_expr = _emit_expr(node.duration_ms) if node.duration_ms is not None else "0"
+                lines.append(
+                    f"{indent}  unsigned long __redu_duration = static_cast<unsigned long>({duration_expr});"
+                )
+                lines.append(f"{indent}  if (__redu_duration > 0UL) {{")
+                lines.append(f"{indent}    delay(__redu_duration);")
+                lines.append(f"{indent}  }}")
+                lines.append(f"{indent}  if (__redu_freq > 0.0f) {{")
+                lines.append(f"{indent}    noTone({pin_code});")
+                lines.append(f"{indent}  }}")
+                lines.append(f"{indent}  {state_var} = false;")
+                lines.append(f"{indent}  {current_var} = 0.0f;")
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, BuzzerStop):
+            pin_code, state_var, current_var, _last_var = _ensure_buzzer_tracking(node.name)
+            lines.append(f"{indent}{state_var} = false;")
+            lines.append(f"{indent}{current_var} = 0.0f;")
+            lines.append(f"{indent}noTone({pin_code});")
+            continue
+
+        if isinstance(node, BuzzerBeep):
+            pin_code, state_var, current_var, last_var = _ensure_buzzer_tracking(node.name)
+            lines.append(f"{indent}{{")
+            if getattr(node, "frequency", None) is not None:
+                freq_expr = _emit_expr(node.frequency) if node.frequency is not None else last_var
+                lines.append(f"{indent}  float __redu_freq_target = static_cast<float>({freq_expr});")
+            else:
+                lines.append(f"{indent}  float __redu_freq_target = {last_var};")
+            lines.append(f"{indent}  if (__redu_freq_target < 0.0f) {{ __redu_freq_target = 0.0f; }}")
+            lines.append(
+                f"{indent}  unsigned long __redu_on_ms = static_cast<unsigned long>({_emit_expr(node.on_ms)});"
+            )
+            lines.append(
+                f"{indent}  unsigned long __redu_off_ms = static_cast<unsigned long>({_emit_expr(node.off_ms)});"
+            )
+            lines.append(f"{indent}  int __redu_times = static_cast<int>({_emit_expr(node.times)});")
+            lines.append(f"{indent}  if (__redu_times < 0) {{ __redu_times = 0; }}")
+            lines.append(f"{indent}  for (int __redu_i = 0; __redu_i < __redu_times; ++__redu_i) {{")
+            lines.append(f"{indent}    if (__redu_freq_target > 0.0f) {{")
+            lines.append(f"{indent}      unsigned int __redu_tone = static_cast<unsigned int>(__redu_freq_target + 0.5f);")
+            lines.append(f"{indent}      tone({pin_code}, __redu_tone);")
+            lines.append(f"{indent}      {state_var} = true;")
+            lines.append(f"{indent}      {current_var} = __redu_freq_target;")
+            lines.append(f"{indent}      {last_var} = __redu_freq_target;")
+            lines.append(f"{indent}    }} else {{")
+            lines.append(f"{indent}      noTone({pin_code});")
+            lines.append(f"{indent}      {state_var} = false;")
+            lines.append(f"{indent}      {current_var} = 0.0f;")
+            lines.append(f"{indent}    }}")
+            lines.append(f"{indent}    if (__redu_on_ms > 0UL) {{ delay(__redu_on_ms); }}")
+            lines.append(f"{indent}    noTone({pin_code});")
+            lines.append(f"{indent}    {state_var} = false;")
+            lines.append(f"{indent}    {current_var} = 0.0f;")
+            lines.append(f"{indent}    if ((__redu_i + 1) < __redu_times && __redu_off_ms > 0UL) {{")
+            lines.append(f"{indent}      delay(__redu_off_ms);")
+            lines.append(f"{indent}    }}")
+            lines.append(f"{indent}  }}")
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, BuzzerSweep):
+            pin_code, state_var, current_var, last_var = _ensure_buzzer_tracking(node.name)
+            start_expr = _emit_expr(node.start_hz)
+            end_expr = _emit_expr(node.end_hz)
+            duration_expr = _emit_expr(node.duration_ms)
+            steps_expr = _emit_expr(node.steps)
+            lines.append(f"{indent}{{")
+            lines.append(f"{indent}  float __redu_start = static_cast<float>({start_expr});")
+            lines.append(f"{indent}  if (__redu_start < 0.0f) {{ __redu_start = 0.0f; }}")
+            lines.append(f"{indent}  float __redu_end = static_cast<float>({end_expr});")
+            lines.append(f"{indent}  if (__redu_end < 0.0f) {{ __redu_end = 0.0f; }}")
+            lines.append(f"{indent}  unsigned long __redu_total = static_cast<unsigned long>({duration_expr});")
+            lines.append(f"{indent}  int __redu_steps = static_cast<int>({steps_expr});")
+            lines.append(f"{indent}  if (__redu_steps < 1) {{ __redu_steps = 1; }}")
+            lines.append(
+                f"{indent}  float __redu_step_delay = (__redu_steps > 0) ? (static_cast<float>(__redu_total) / static_cast<float>(__redu_steps)) : 0.0f;"
+            )
+            lines.append(f"{indent}  for (int __redu_i = 0; __redu_i < __redu_steps; ++__redu_i) {{")
+            lines.append(
+                f"{indent}    float __redu_progress = (__redu_steps == 1) ? 1.0f : (static_cast<float>(__redu_i) / (static_cast<float>(__redu_steps) - 1.0f));"
+            )
+            lines.append(f"{indent}    float __redu_freq = __redu_start + (__redu_end - __redu_start) * __redu_progress;")
+            lines.append(f"{indent}    if (__redu_freq < 0.0f) {{ __redu_freq = 0.0f; }}")
+            lines.append(f"{indent}    if (__redu_freq > 0.0f) {{")
+            lines.append(f"{indent}      unsigned int __redu_tone = static_cast<unsigned int>(__redu_freq + 0.5f);")
+            lines.append(f"{indent}      tone({pin_code}, __redu_tone);")
+            lines.append(f"{indent}      {state_var} = true;")
+            lines.append(f"{indent}      {current_var} = __redu_freq;")
+            lines.append(f"{indent}      {last_var} = __redu_freq;")
+            lines.append(f"{indent}    }} else {{")
+            lines.append(f"{indent}      noTone({pin_code});")
+            lines.append(f"{indent}      {state_var} = false;")
+            lines.append(f"{indent}      {current_var} = 0.0f;")
+            lines.append(f"{indent}    }}")
+            lines.append(f"{indent}    if (__redu_step_delay > 0.0f) {{")
+            lines.append(f"{indent}      delay(static_cast<unsigned long>(__redu_step_delay));")
+            lines.append(f"{indent}    }}")
+            lines.append(f"{indent}  }}")
+            lines.append(f"{indent}  noTone({pin_code});")
+            lines.append(f"{indent}  {state_var} = false;")
+            lines.append(f"{indent}  {current_var} = 0.0f;")
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, BuzzerMelody):
+            pin_code, state_var, current_var, last_var = _ensure_buzzer_tracking(node.name)
+            melody_data = _BUZZER_MELODIES.get(node.melody)
+            if melody_data is None:
+                continue
+            default_tempo = melody_data["tempo"]
+            tempo_expr = (
+                f"static_cast<float>({_emit_expr(node.tempo)})"
+                if getattr(node, "tempo", None) is not None
+                else _format_float(default_tempo)
+            )
+            guard_expr = _format_float(default_tempo)
+            freqs = ", ".join(_format_float(freq) if freq else "0.0f" for freq, _ in melody_data["sequence"])
+            beats = ", ".join(_format_float(beat) for _, beat in melody_data["sequence"])
+            lines.append(f"{indent}{{")
+            lines.append(f"{indent}  float __redu_tempo = {tempo_expr};")
+            lines.append(f"{indent}  if (__redu_tempo <= 0.0f) {{ __redu_tempo = {guard_expr}; }}")
+            lines.append(f"{indent}  float __redu_beat_ms = 60000.0f / __redu_tempo;")
+            lines.append(f"{indent}  const float __redu_freqs[] = {{{freqs}}};")
+            lines.append(f"{indent}  const float __redu_beats[] = {{{beats}}};")
+            lines.append(
+                f"{indent}  const size_t __redu_melody_len = sizeof(__redu_freqs) / sizeof(__redu_freqs[0]);"
+            )
+            lines.append(f"{indent}  for (size_t __redu_i = 0; __redu_i < __redu_melody_len; ++__redu_i) {{")
+            lines.append(f"{indent}    float __redu_freq = __redu_freqs[__redu_i];")
+            lines.append(f"{indent}    float __redu_duration = __redu_beats[__redu_i] * __redu_beat_ms;")
+            lines.append(f"{indent}    if (__redu_freq <= 0.0f) {{")
+            lines.append(f"{indent}      noTone({pin_code});")
+            lines.append(f"{indent}      {state_var} = false;")
+            lines.append(f"{indent}      {current_var} = 0.0f;")
+            lines.append(f"{indent}      if (__redu_duration > 0.0f) {{ delay(static_cast<unsigned long>(__redu_duration)); }}")
+            lines.append(f"{indent}      continue;")
+            lines.append(f"{indent}    }}")
+            lines.append(f"{indent}    unsigned int __redu_tone = static_cast<unsigned int>(__redu_freq + 0.5f);")
+            lines.append(f"{indent}    tone({pin_code}, __redu_tone);")
+            lines.append(f"{indent}    {state_var} = true;")
+            lines.append(f"{indent}    {current_var} = __redu_freq;")
+            lines.append(f"{indent}    {last_var} = __redu_freq;")
+            lines.append(f"{indent}    if (__redu_duration > 0.0f) {{ delay(static_cast<unsigned long>(__redu_duration)); }}")
+            lines.append(f"{indent}    noTone({pin_code});")
+            lines.append(f"{indent}    {state_var} = false;")
+            lines.append(f"{indent}    {current_var} = 0.0f;")
+            lines.append(f"{indent}  }}")
+            lines.append(f"{indent}}}")
+            continue
+
         if isinstance(node, Sleep):
             lines.append(f"{indent}delay({_emit_expr(node.ms)});")
 
@@ -1025,6 +1319,10 @@ def emit(ast: Program) -> str:
     led_pin: Dict[str, Union[int, str]] = {}
     led_state: Dict[str, str] = {}
     led_brightness: Dict[str, str] = {}
+    buzzer_pin: Dict[str, Union[int, str]] = {}
+    buzzer_state: Dict[str, str] = {}
+    buzzer_current: Dict[str, str] = {}
+    buzzer_last: Dict[str, str] = {}
     rgb_led_pins: Dict[str, Tuple[Union[int, str], Union[int, str], Union[int, str]]] = {}
     rgb_led_state: Dict[str, str] = {}
     rgb_led_colors: Dict[str, Tuple[str, str, str]] = {}
@@ -1163,6 +1461,29 @@ def emit(ast: Program) -> str:
             if bright_line not in globals_:
                 globals_.append(bright_line)
             led_pin[node.name] = node.pin
+        if isinstance(node, BuzzerDecl):
+            buzzer_pin[node.name] = node.pin
+            state_var = f"__buzzer_state_{node.name}"
+            current_var = f"__buzzer_current_{node.name}"
+            last_var = f"__buzzer_last_{node.name}"
+            buzzer_state[node.name] = state_var
+            buzzer_current[node.name] = current_var
+            buzzer_last[node.name] = last_var
+            state_line = f"bool {state_var} = false;"
+            if state_line not in globals_:
+                globals_.append(state_line)
+            current_line = f"float {current_var} = 0.0f;"
+            if current_line not in globals_:
+                globals_.append(current_line)
+            default_expr = _emit_expr(node.default_frequency)
+            last_line = f"float {last_var} = static_cast<float>({default_expr});"
+            if last_line not in globals_:
+                globals_.append(last_line)
+            pin_expr = _emit_expr(node.pin)
+            key = (node.name, pin_expr, "OUTPUT")
+            if key not in pin_mode_emitted:
+                pin_mode_emitted.add(key)
+                setup_lines.append(f"  pinMode({pin_expr}, OUTPUT);")
         if isinstance(node, RGBLedDecl):
             state_var = f"__rgb_state_{node.name}"
             color_vars = (
@@ -1301,6 +1622,10 @@ def emit(ast: Program) -> str:
             led_pin,
             led_state,
             led_brightness,
+            buzzer_pin,
+            buzzer_state,
+            buzzer_current,
+            buzzer_last,
             rgb_led_pins,
             rgb_led_state,
             rgb_led_colors,
@@ -1325,6 +1650,10 @@ def emit(ast: Program) -> str:
                     led_pin,
                     led_state,
                     led_brightness,
+                    buzzer_pin,
+                    buzzer_state,
+                    buzzer_current,
+                    buzzer_last,
                     rgb_led_pins,
                     rgb_led_state,
                     rgb_led_colors,
@@ -1346,6 +1675,10 @@ def emit(ast: Program) -> str:
             led_pin,
             led_state,
             led_brightness,
+            buzzer_pin,
+            buzzer_state,
+            buzzer_current,
+            buzzer_last,
             rgb_led_pins,
             rgb_led_state,
             rgb_led_colors,
@@ -1369,6 +1702,10 @@ def emit(ast: Program) -> str:
             dict(led_pin),
             dict(led_state),
             dict(led_brightness),
+            dict(buzzer_pin),
+            dict(buzzer_state),
+            dict(buzzer_current),
+            dict(buzzer_last),
             dict(rgb_led_pins),
             dict(rgb_led_state),
             dict(rgb_led_colors),

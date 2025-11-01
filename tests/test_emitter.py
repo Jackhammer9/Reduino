@@ -55,6 +55,33 @@ def test_emit_infinite_loop_moves_body_to_loop(src, norm) -> None:
     assert "delay(100);" in loop_section
 
 
+def test_emit_buzzer_primitives(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Actuators import Buzzer
+
+            buzzer = Buzzer(8, default_frequency=523.25)
+            buzzer.play_tone(440, duration_ms=120)
+            buzzer.stop()
+            buzzer.beep(frequency=660, on_ms=10, off_ms=5, times=2)
+            buzzer.sweep(200, 400, duration_ms=300, steps=3)
+            buzzer.melody("success", tempo=200)
+            """
+        )
+    )
+
+    text = norm(cpp)
+    assert "float __buzzer_last_buzzer = static_cast<float>(523.25);" in text
+    assert "pinMode(8, OUTPUT);" in text
+    assert "tone(8," in text
+    assert "noTone(8);" in text
+    assert "unsigned long __redu_duration = static_cast<unsigned long>(120.0);" in text
+    assert "float __redu_start = static_cast<float>(200.0);" in text
+    assert "const float __redu_freqs[] = {523.25f, 659.25f, 783.99f};" in text
+    assert "if (__redu_tempo <= 0.0f) { __redu_tempo = 240.0f; }" in text
+
+
 def test_emit_button_generates_polling_loop(src, norm) -> None:
     cpp = compile_source(
         src(

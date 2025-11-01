@@ -5,6 +5,12 @@ from __future__ import annotations
 import pytest
 
 from Reduino.transpile.ast import (
+    BuzzerBeep,
+    BuzzerDecl,
+    BuzzerMelody,
+    BuzzerPlayTone,
+    BuzzerStop,
+    BuzzerSweep,
     BreakStmt,
     ButtonDecl,
     ButtonPoll,
@@ -72,6 +78,91 @@ def test_parser_promotes_infinite_loop(src) -> None:
     assert program.setup_body
     assert program.loop_body
     assert any(isinstance(stmt, LedToggle) for stmt in program.loop_body)
+
+
+def test_parser_handles_buzzer_primitives(src) -> None:
+    code = src(
+        """
+        from Reduino.Actuators import Buzzer
+
+        buzzer = Buzzer(9, default_frequency=523.25)
+        buzzer.play_tone(440, duration_ms=120)
+        buzzer.stop()
+        buzzer.beep(frequency=660, on_ms=10, off_ms=5, times=3)
+        buzzer.sweep(200, 400, duration_ms=300, steps=4)
+        buzzer.melody("success", tempo=180)
+        """
+    )
+
+    program = _parse(code)
+    decl, play, stop, beep, sweep, melody = program.setup_body
+    assert isinstance(decl, BuzzerDecl)
+    assert decl.pin == 9
+    assert decl.default_frequency == pytest.approx(523.25)
+
+    assert isinstance(play, BuzzerPlayTone)
+    assert play.frequency == pytest.approx(440)
+    assert play.duration_ms == pytest.approx(120)
+
+    assert isinstance(stop, BuzzerStop)
+
+    assert isinstance(beep, BuzzerBeep)
+    assert beep.frequency == pytest.approx(660)
+    assert beep.on_ms == pytest.approx(10)
+    assert beep.off_ms == pytest.approx(5)
+    assert beep.times == 3
+
+    assert isinstance(sweep, BuzzerSweep)
+    assert sweep.start_hz == pytest.approx(200)
+    assert sweep.end_hz == pytest.approx(400)
+    assert sweep.duration_ms == pytest.approx(300)
+    assert sweep.steps == 4
+
+    assert isinstance(melody, BuzzerMelody)
+    assert melody.melody == "success"
+    assert melody.tempo == pytest.approx(180)
+
+
+def test_parser_buzzer_optional_arguments(src) -> None:
+    code = src(
+        """
+        from Reduino.Actuators import Buzzer
+
+        buzzer = Buzzer()
+        buzzer.play_tone(330)
+        buzzer.beep(times=1)
+        buzzer.melody("notify")
+        """
+    )
+
+    program = _parse(code)
+    _, play, beep, melody = program.setup_body
+    assert isinstance(play, BuzzerPlayTone)
+    assert play.duration_ms is None
+
+    assert isinstance(beep, BuzzerBeep)
+    assert beep.frequency is None
+    assert beep.on_ms == 100
+    assert beep.off_ms == 100
+    assert beep.times == 1
+
+    assert isinstance(melody, BuzzerMelody)
+    assert melody.tempo is None
+
+
+def test_parser_buzzer_melody_requires_literal(src) -> None:
+    code = src(
+        """
+        from Reduino.Actuators import Buzzer
+
+        name = "success"
+        buzzer = Buzzer()
+        buzzer.melody(name)
+        """
+    )
+
+    with pytest.raises(ValueError, match="string literal"):
+        _parse(code)
 
 
 def test_parser_for_range_creates_loop_node(src) -> None:

@@ -53,6 +53,62 @@ class LedDecl:
 
 
 @dataclass
+class BuzzerDecl:
+    """Declare a passive buzzer bound to ``pin``."""
+
+    name: str
+    pin: Union[int, str] = 8
+    default_frequency: Union[float, int, str] = 440.0
+
+
+@dataclass
+class BuzzerPlayTone:
+    """Play a tone on the passive buzzer."""
+
+    name: str
+    frequency: Union[float, int, str]
+    duration_ms: Optional[Union[float, int, str]] = None
+
+
+@dataclass
+class BuzzerStop:
+    """Stop any active tone on the buzzer."""
+
+    name: str
+
+
+@dataclass
+class BuzzerBeep:
+    """Emit a pulsed tone pattern on the buzzer."""
+
+    name: str
+    frequency: Optional[Union[float, int, str]] = None
+    on_ms: Union[float, int, str] = 100
+    off_ms: Union[float, int, str] = 100
+    times: Union[int, str] = 1
+
+
+@dataclass
+class BuzzerSweep:
+    """Sweep the buzzer between start and end frequencies."""
+
+    name: str
+    start_hz: Union[float, int, str]
+    end_hz: Union[float, int, str]
+    duration_ms: Union[float, int, str]
+    steps: Union[int, str] = 10
+
+
+@dataclass
+class BuzzerMelody:
+    """Play a named cue melody on the buzzer."""
+
+    name: str
+    melody: str
+    tempo: Optional[Union[float, int, str]] = None
+
+
+@dataclass
 class LedOn:
     """Turn the named LED on."""
 

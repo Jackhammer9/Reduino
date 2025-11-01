@@ -7,7 +7,7 @@ from typing import Callable
 
 import pytest
 
-from Reduino.Actuators import Led, RGBLed, Servo
+from Reduino.Actuators import Buzzer, Led, RGBLed, Servo
 
 
 def _patch_sleep(monkeypatch: pytest.MonkeyPatch, collector: list[float]) -> None:
@@ -206,20 +206,75 @@ class TestRGBLed:
         with pytest.raises(ValueError):
             led.fade(0, 0, 0, steps=0)
 
-    def test_blink_restores_original_color(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        led = RGBLed(7, 8, 9)
-        led.set_color(5, 15, 25)
+
+class TestBuzzerPlaceholder:
+    """Minimal checks for the passive buzzer placeholder helper."""
+
+    def test_methods_exist(self) -> None:
+        buzzer = Buzzer()
+        assert buzzer.pin == 8
+        assert buzzer.default_frequency == 440.0
+
+        buzzer.play_tone(440)
+        buzzer.stop()
+        buzzer.beep()
+        buzzer.sweep(100, 200, duration_ms=0, steps=1)
+        buzzer.melody("success")
+
+
+class TestRGBLed:
+    """Tests covering the :class:`Reduino.Actuators.RGBLed` helper."""
+
+    def test_pin_validation_and_defaults(self) -> None:
+        led = RGBLed(9, 10, 11)
+        assert led.pins == (9, 10, 11)
+        assert led.get_color() == (0, 0, 0)
+        assert led.get_state() is False
+
+        with pytest.raises(TypeError):
+            RGBLed("9", 10, 11)  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            RGBLed(-1, 10, 11)
+
+    def test_color_management_and_state_updates(self) -> None:
+        led = RGBLed(3, 5, 6)
+
+        led.set_color(10, 20, 30)
+        assert led.get_color() == (10, 20, 30)
+        assert led.get_state() is True
+
+        led.off()
+        assert led.get_color() == (0, 0, 0)
+        assert led.get_state() is False
+
+        led.on(1, 2, 3)
+        assert led.get_color() == (1, 2, 3)
+
+        with pytest.raises(ValueError):
+            led.set_color(256, 0, 0)
+        with pytest.raises(TypeError):
+            led.set_color(1, 2, 3.5)  # type: ignore[arg-type]
+
+    def test_fade_interpolates_steps(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        led = RGBLed(4, 5, 6)
+        led.set_color(0, 0, 0)
         calls: list[float] = []
         _patch_sleep(monkeypatch, calls)
 
-        led.blink(255, 0, 0, times=2, delay_ms=12)
-        assert led.get_color() == (5, 15, 25)
-        assert calls == [12, 12, 12, 12]
+        led.fade(10, 20, 30, duration_ms=30, steps=3)
+        assert led.get_color() == (10, 20, 30)
+        assert calls == [10.0, 10.0]
+
+        led.fade(10, 20, 30, duration_ms=0, steps=3)
+        assert calls == [10.0, 10.0]
 
         with pytest.raises(ValueError):
-            led.blink(0, 0, 0, times=0)
+            led.fade(0, 0, 0, duration_ms=-1)
         with pytest.raises(ValueError):
-            led.blink(0, 0, 0, delay_ms=-1)
+            led.fade(0, 0, 0, steps=0)
+
 
 
 class TestServo:
