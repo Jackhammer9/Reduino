@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "Reduino"
-version = "0.0.3"
+version = "1.0.0"
 description = "Reduino transpiles Python scripts into efficient Arduino C++ and uploads automatically. A simple, intuitive way to control sensors, LEDs, and actuators without touching C++."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Arnav Bajaj" , email= "arnavbajaj9@gmail.com"}]
 keywords = ["arduino", "embedded", "transpiler", "robotics", "avr", "cpp"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Operating System :: OS Independent",
