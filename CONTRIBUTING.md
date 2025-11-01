@@ -1,138 +1,226 @@
 # Contributing to Reduino
 
-Thanks for helping Reduino grow! This guide explains how to set up your development
-environment, the expectations for pull requests, and provides a detailed recipe for adding new
-actuators or sensors to the transpiler.
+Thank you for your interest in improving **Reduino**!  
+This document explains how to set up your environment, the expected workflow, and the process for safely extending Reduino with new devices, syntax, or utilities.
 
 ---
 
-## Getting started
+## Overview
 
-1. **Clone and create a virtual environment**
-   ```bash
-   git clone <your-fork-url>
-   cd Reduino
-   python -m venv .venv
-   source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-   ```
-2. **Install the project with the development extras**
-   ```bash
-   pip install -e .[dev]
-   ```
-3. **Install PlatformIO if you plan to test uploads**
-   ```bash
-   pip install platformio
-   ```
+Reduino is a **Python → Arduino C++ transpiler** that enables developers to control hardware using high-level Python syntax.  
+To keep this experience consistent, contributions must follow clean code patterns, consistent naming, and test coverage.
 
-## Development workflow
+---
 
-- **Write tests** for new behaviour and keep existing tests passing:
-  ```bash
-  pytest
-  ```
-- **Keep commits focused.** Each pull request should have a clear purpose and include any
-  documentation updates that help users understand the change.
-- **Document user-facing additions** in `README.md`, and update examples when new primitives or
-  syntax are introduced.
-- **Run PlatformIO manually** (`pio run`, `pio run -t upload`) when your change affects the
-  generated C++ or project layout.
+## Getting Started
 
-## Code style and guidelines
+### 1. Fork & Clone
 
-- Follow the existing module layout under `src/Reduino/`:
-  ```
-  src/Reduino/
-    transpile/      # Parser, AST, and emitter
-    toolchain/      # PlatformIO helpers
-    Actuators/      # Runtime helpers mirroring generated code
-    Time.py         # Timing helpers for tests/examples
-  ```
-- Prefer descriptive naming (`LedDecl`, `Sleep`, `VarAssign`) and keep parser/emitter logic
-  side-effect free. The transpiler must never execute user code.
-- Use Python `snake_case` for variables/functions and match Arduino C++ conventions (camelCase
-  for temporary loop variables when appropriate) in emitted code.
-- Avoid introducing heavy runtime dependencies. Keep third-party tools in optional extras.
-
-## Adding new actuators or sensors
-
-The transpiler is IR-driven: the parser recognises Python syntax and produces IR nodes, and the
-emitter converts those nodes into Arduino C++. The checklist below keeps both halves aligned.
-
-### 1. Plan the feature
-
-- Pick the category: **Actuator** (outputs such as LEDs, buzzers, motors) or **Sensor**
-  (inputs such as ultrasonic sensors or IMUs).
-- Sketch the Python API you want users to write. Example:
-  ```python
-  from Reduino.Actuators import Buzzer
-  buzzer = Buzzer(9)
-  buzzer.on(440)
-  buzzer.off()
-  ```
-- Decide which Arduino headers and setup steps are required (`<Servo.h>`, `Wire.begin()`, etc.).
-
-### 2. Extend the IR (`src/Reduino/transpile/ast.py`)
-
-Add dataclasses describing declarations and actions:
-```python
-from dataclasses import dataclass
-from typing import Union
-
-@dataclass
-class BuzzerDecl:
-    name: str
-    pin: Union[int, str]
-
-@dataclass
-class BuzzerOn:
-    name: str
-    freq: Union[int, str]
-
-@dataclass
-class BuzzerOff:
-    name: str
+```bash
+git clone https://github.com/Jackhammer9/Reduino.git
+cd Reduino
 ```
-Use the naming convention `<Device>Decl`, `<Device><Verb>` to mirror existing nodes.
+2. Create a Virtual Environment
+```bash
+python -m venv .venv
+source .venv/bin/activate   # on Linux/macOS
+.venv\Scripts\activate      # on Windows
+```
+3. Install Dependencies
+```bash
+pip install -e .[dev]
+pip install platformio      # required for upload testing
+```
+4. Run Tests
+Reduino uses pytest for its test suite.
 
-### 3. Update the parser (`src/Reduino/transpile/parser.py`)
+```bash
+pytest
+```
+Make sure all tests pass before committing.
 
-1. **Ignore imports** for the new device so users can `from Reduino.Actuators import Buzzer`.
-2. **Recognise declarations and actions** with new regular expressions.
-3. **Evaluate constant expressions** via `_eval_const` where possible; fall back to `_to_c_expr`
-   to keep symbolic expressions intact.
-4. **Record helper requirements** (e.g. custom headers) by adding entries to the context’s
-   `helpers` set if the emitted code needs them.
+# Repository Layout
+graphql
+Copy code
+src/Reduino/
+├── Actuators/         # LED, Buzzer, Servo, etc.
+├── Sensors/           # Ultrasonic, Button, Potentiometer, etc.
+├── Communication/     # SerialMonitor and future I/O classes
+├── Utils/             # Timing helpers (sleep, map)
+├── toolchain/         # PlatformIO integration
+└── transpile/         # Parser, Emitter, AST, and core transpiler
+# Development Workflow
+Create a new branch for your feature or fix:
 
-### 4. Update the emitter (`src/Reduino/transpile/emitter.py`)
+```bash
+git checkout -b feature/my-new-sensor
+Implement your feature under the appropriate module.
+```
 
-- Emit global state, setup code, and action statements for the new nodes.
-- Inject additional headers or helper functions if your device requires them (e.g. servo
-  objects, wire initialisation).
-- Ensure pin initialisation happens inside `setup()` even when declarations appear in the loop
-  body.
+Add or update tests under tests/.
 
-### 5. Tests
+Update documentation in README.md and CONTRIBUTING.md if necessary.
 
-- Add parser tests (`tests/test_parser.py`) covering declarations, actions, control-flow
-  interactions, and helper promotion.
-- Add emitter tests (`tests/test_emitter.py`) that confirm the expected C++ output (pin modes,
-  library includes, method calls, etc.).
-- Extend runtime helper tests (`tests/test_actuators.py`, `tests/test_time.py`) when new Python
-  classes are introduced.
+Run all tests to verify correctness.
 
-### 6. Documentation & examples
+Submit a Pull Request with a clear description and examples.
 
-- Provide usage examples under `examples/<device>/` that mirror the intended Python DSL.
-- Update `README.md` and this document when the feature adds new primitives, syntax, or
-  requirements.
+# Code Style Guidelines
+General
+Use PEP 8 conventions for Python.
 
-### 7. Pull request checklist
+Use camelCase only in emitted Arduino C++ code.
 
-- [ ] IR dataclasses added.
-- [ ] Parser recognises imports, declarations, and actions.
-- [ ] Emitter produces the correct C++ (including headers/setup).
-- [ ] Tests cover parser, emitter, and runtime helpers.
-- [ ] Documentation and examples updated.
-- [ ] `pytest` (and `pio run` if applicable) succeed locally.
+Avoid external dependencies unless absolutely required.
 
-Happy hacking!
+Keep code minimal and deterministic — the transpiler must never execute user logic on the host.
+
+Naming
+Follow the existing naming convention:
+
+Purpose	Example
+Declaration node	LedDecl, ButtonDecl
+Action node	LedOn, BuzzerMelody, ServoWrite
+Class name (Python)	Led, Buzzer, Servo, Ultrasonic
+File name	lowercase: led.py, buzzer.py
+
+# Adding a New Actuator or Sensor
+Reduino uses an IR (Intermediate Representation) between Python and C++.
+
+To add new hardware, follow these steps carefully.
+
+1. Plan the API
+Example for a new device:
+
+```python
+from Reduino.Actuators import Motor
+
+motor = Motor(5, 6)
+motor.forward(speed=150)
+motor.stop()
+```
+Decide what actions it will have (forward, reverse, stop, etc.) and which Arduino headers it needs (Servo.h, Wire.h, etc.).
+
+2. Extend the AST (src/Reduino/transpile/ast.py)
+Add new dataclasses that describe both the declaration and actions.
+
+```python
+@dataclass
+class MotorDecl:
+    name: str
+    pin1: Union[int, str]
+    pin2: Union[int, str]
+
+@dataclass
+class MotorForward:
+    name: str
+    speed: Union[int, str]
+Use Decl for initialization and <Device><Verb> for actions.
+```
+
+3. Update the Parser (src/Reduino/transpile/parser.py)
+Add import recognition:
+
+```python
+if module == "Reduino.Actuators" and name == "Motor":
+    return None
+```
+Add regex patterns for declaration and actions.
+
+Evaluate constants using _eval_const() when possible.
+
+Return appropriate IR node objects.
+
+4. Update the Emitter (src/Reduino/transpile/emitter.py)
+Implement C++ emission for the new nodes:
+
+Emit setup code (pinMode, object creation)
+
+Emit runtime code for actions
+
+Inject Arduino headers when necessary
+
+```python
+if isinstance(node, MotorForward):
+    lines.append(f"analogWrite({pin1}, {speed});")
+    lines.append(f"analogWrite({pin2}, 0);")
+```
+Add new helper variables for state tracking if needed.
+
+5. Add Runtime Python Helper (Optional)
+If your device needs a Python-side placeholder for syntax (e.g., Motor.forward()), add it under:
+
+```bash
+src/Reduino/Actuators/motor.py
+```
+Example:
+
+```python
+class Motor:
+    def __init__(self, pin1, pin2):
+        self.pin1 = pin1
+        self.pin2 = pin2
+```
+Host-side methods don’t perform real actions — they only exist for syntax and transpilation.
+
+6. Write Tests
+Parser Test (tests/test_parser.py)
+Ensure Reduino recognizes your new device:
+
+```python
+code = "from Reduino.Actuators import Motor\nmotor = Motor(5,6)\nmotor.forward(100)"
+prog = parse(code)
+assert any(isinstance(n, MotorDecl) for n in prog.body)
+```
+
+Emitter Test (tests/test_emitter.py)
+Verify correct Arduino code emission:
+
+```python
+cpp = emit(parse(code))
+assert "analogWrite" in cpp
+```
+
+7. Documentation & Examples
+Update README.md with:
+
+A short table of methods and parameters
+
+A working example including target() at top
+
+Any special notes ([!NOTE] blocks)
+
+Add an example script under:
+
+```bash
+examples/Motor/motor_demo.py
+```
+
+# Testing & QA
+Run pytest before every commit.
+
+Use short, descriptive commit messages (e.g., “Add RGB LED fade support”).
+
+Lint with ruff or flake8.
+
+# Contribution Tips
+Keep PRs small and focused. Avoid combining multiple feature additions in one PR.
+
+Write docstrings for all new public functions and classes.
+
+Test on real hardware whenever possible to confirm the generated code works.
+
+Discuss before large refactors. Open an issue to gather feedback first.
+
+# Pull Request Checklist
+ Code follows project conventions
+
+ All tests pass (pytest)
+
+ Examples updated or added
+
+ README and Contributing docs updated
+
+ PlatformIO upload verified if applicable
+
+Happy hacking with Reduino!
