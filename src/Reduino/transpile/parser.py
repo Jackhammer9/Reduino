@@ -617,7 +617,7 @@ def _to_c_expr(
                     if owner_node.id in serials:
                         if emit_mode in {"both", "mcu"}:
                             return "Serial.readStringUntil('\\n')"
-                        return '""'
+                        return ''
                 raise ValueError("unsupported attribute call")
 
             raise ValueError("unsupported attribute call")
