@@ -324,6 +324,36 @@ def test_parser_lcd_support(src) -> None:
     assert any(isinstance(node, LCDTick) for node in program.loop_body)
 
 
+def test_parser_lcd_animation_variants(src) -> None:
+    code = src(
+        """
+        from Reduino.Displays import LCD
+
+        panel = LCD(i2c_addr=0x27, cols=16, rows=2)
+        panel.animate("blink", 0, "Blink", loop=True)
+        panel.animate("typewriter", 1, "Type", speed_ms=150)
+        panel.animate("bounce", 0, "Go", speed_ms=100)
+        """
+    )
+
+    program = _parse(code)
+    animations = [node for node in program.setup_body if isinstance(node, LCDAnimate)]
+    assert {node.animation for node in animations} == {"blink", "typewriter", "bounce"}
+    assert any(isinstance(node, LCDTick) for node in program.loop_body)
+
+    with pytest.raises(ValueError):
+        _parse(
+            src(
+                """
+                from Reduino.Displays import LCD
+
+                panel = LCD(i2c_addr=0x27, cols=16, rows=2)
+                panel.animate("spiral", 0, "Nope")
+                """
+            )
+        )
+
+
 def test_parser_rgb_led_nodes(src) -> None:
     code = src(
         """

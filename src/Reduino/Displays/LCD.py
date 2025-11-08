@@ -12,7 +12,7 @@ _ALIGN_OPTIONS = {"left", "center", "right"}
 class _AnimationState:
     """Runtime bookkeeping for non-blocking text animations."""
 
-    name: str
+    animation: str
     row: int
     text: str
     speed_ms: int
@@ -20,6 +20,10 @@ class _AnimationState:
     last_tick: int = 0
     offset: int = 0
     active: bool = True
+    direction: int = 1
+    visible: int = 0
+    show: bool = True
+    cycles: int = 0
 
 
 class LCD:
@@ -263,22 +267,33 @@ class LCD:
         self.buffer[row_idx] = text.ljust(self.cols)
 
     # --- Animations --------------------------------------------------------------
+    _ANIMATION_OPTIONS: ClassVar[Dict[str, str]] = {
+        "scroll": "Marquee-style horizontal scroll",
+        "blink": "Toggle text visibility without blocking",
+        "typewriter": "Reveal text one character at a time",
+        "bounce": "Slide text left and right across the row",
+    }
+
     def animate(
         self,
-        name: str,
+        animation: str,
         row: int,
         text: str,
         *,
         speed_ms: int = 200,
         loop: bool = False,
     ) -> None:
-        """Start or restart a named marquee animation."""
+        """Start or restart a named LCD animation."""
 
-        if name != "scroll":
-            raise ValueError("only the 'scroll' animation is supported")
+        animation_name = str(animation).lower()
+        if animation_name not in self._ANIMATION_OPTIONS:
+            options = ", ".join(sorted(self._ANIMATION_OPTIONS))
+            raise ValueError(
+                f"unsupported animation: {animation!r} (choose from {options})"
+            )
         row_idx = self._validate_row(row)
         state = _AnimationState(
-            name=name,
+            animation=animation_name,
             row=row_idx,
             text=str(text),
             speed_ms=max(0, int(speed_ms)),
@@ -286,9 +301,38 @@ class LCD:
             last_tick=0,
             offset=0,
             active=True,
+            direction=1,
+            visible=0,
+            show=True,
+            cycles=0,
         )
-        self.animations[name] = state
-        self.line(row_idx, state.text[: self.cols], align="left", clear_row=True)
+        key = f"{animation_name}:{row_idx}:{len(self.animations)}"
+        self.animations[key] = state
+
+        if animation_name == "scroll":
+            self.line(row_idx, state.text[: self.cols], align="left", clear_row=True)
+        elif animation_name == "blink":
+            state.show = True
+            view = state.text[: self.cols]
+            self.line(row_idx, view, align="left", clear_row=True)
+        elif animation_name == "typewriter":
+            length = len(state.text)
+            state.visible = min(length, 1)
+            snippet = state.text[: state.visible][: self.cols]
+            self.line(row_idx, snippet, align="left", clear_row=True)
+        elif animation_name == "bounce":
+            state.direction = 1
+            state.offset = 0
+            state.show = False
+            row_chars = [" "] * self.cols
+            for index, char in enumerate(state.text):
+                if index >= self.cols:
+                    break
+                row_chars[index] = char
+            self.buffer[row_idx] = "".join(row_chars)
+
+        else:  # pragma: no cover - defensive fallback
+            raise AssertionError(f"unhandled animation {animation_name}")
 
     def tick(self, now_ms: Optional[int] = None) -> None:
         """Advance any running animations."""
@@ -307,17 +351,83 @@ class LCD:
             if not proceed:
                 continue
             state.last_tick = now_ms
-            padded = state.text + " " * self.cols
-            if not padded:
-                continue
-            view = (padded + padded)[state.offset : state.offset + self.cols]
-            self.line(state.row, view, clear_row=True)
-            state.offset += 1
-            if state.offset >= len(padded):
-                if state.loop:
-                    state.offset = 0
+            if state.animation == "scroll":
+                padded = state.text + " " * self.cols
+                if not padded:
+                    continue
+                view = (padded + padded)[state.offset : state.offset + self.cols]
+                self.line(state.row, view, clear_row=True)
+                state.offset += 1
+                if state.offset >= len(padded):
+                    if state.loop:
+                        state.offset = 0
+                    else:
+                        state.active = False
+            elif state.animation == "blink":
+                state.show = not state.show
+                if state.show:
+                    view = state.text[: self.cols]
+                    self.line(state.row, view, align="left", clear_row=True)
                 else:
-                    state.active = False
+                    self.line(state.row, "", align="left", clear_row=True)
+                    state.cycles += 1
+                    if not state.loop:
+                        state.active = False
+            elif state.animation == "typewriter":
+                length = len(state.text)
+                if length == 0:
+                    self.line(state.row, "", align="left", clear_row=True)
+                    state.active = state.loop
+                    continue
+                if state.visible < length:
+                    state.visible += 1
+                    snippet = state.text[: state.visible][: self.cols]
+                    self.line(state.row, snippet, align="left", clear_row=True)
+                    if state.visible >= length and not state.loop:
+                        state.active = False
+                else:
+                    if state.loop:
+                        state.visible = 0
+                        self.line(state.row, "", align="left", clear_row=True)
+                    else:
+                        state.active = False
+            elif state.animation == "bounce":
+                text = state.text
+                if not text:
+                    self.line(state.row, "", align="left", clear_row=True)
+                    state.active = state.loop
+                    continue
+                if len(text) >= self.cols:
+                    view = text[: self.cols]
+                    self.line(state.row, view, align="left", clear_row=True)
+                    state.active = state.loop
+                    continue
+                max_offset = max(0, self.cols - len(text))
+                if max_offset == 0:
+                    state.active = state.loop
+                    continue
+                state.offset += state.direction
+                if state.offset >= max_offset:
+                    state.offset = max_offset
+                    state.direction = -1
+                    state.show = True
+                elif state.offset <= 0:
+                    state.offset = 0
+                    state.direction = 1
+                    if state.show:
+                        state.cycles += 1
+                        state.show = False
+                        if not state.loop and state.cycles >= 1:
+                            state.active = False
+                row_chars = [" "] * self.cols
+                for index, char in enumerate(text):
+                    position = state.offset + index
+                    if position >= self.cols:
+                        break
+                    row_chars[position] = char
+                self.buffer[state.row] = "".join(row_chars)
+            else:  # pragma: no cover - defensive fallback
+                raise AssertionError(f"unknown animation type {state.animation}")
 
     # --- Representation helpers --------------------------------------------------
     def dump(self) -> str:

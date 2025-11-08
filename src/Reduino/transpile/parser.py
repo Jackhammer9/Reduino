@@ -2170,6 +2170,16 @@ def _parse_simple_lines(
             raise ValueError(f"unknown progress style: {value!r} (choose from {options})")
         return value
 
+    def _resolve_animation_arg(arg_src: Optional[str]) -> str:
+        allowed = {"scroll", "blink", "typewriter", "bounce"}
+        value = _require_string_literal(arg_src, "animation").lower()
+        if value not in allowed:
+            options = ", ".join(sorted(allowed))
+            raise ValueError(
+                f"unknown animation: {value!r} (choose from {options})"
+            )
+        return value
+
     i = 0
     while i < len(snippet):
         raw = snippet[i]
@@ -3729,9 +3739,7 @@ def _parse_simple_lines(
                 text_arg = _extract_call_argument(args_src, position=2)
                 if anim_arg is None or row_arg is None or text_arg is None:
                     raise ValueError("LCD.animate requires animation name, row and text")
-                animation_name = _require_string_literal(anim_arg, "animation").lower()
-                if animation_name != "scroll":
-                    raise ValueError("only the 'scroll' animation is supported")
+                animation_name = _resolve_animation_arg(anim_arg)
                 speed_arg = _extract_call_argument(args_src, keyword="speed_ms")
                 if speed_arg is None:
                     speed_arg = _extract_call_argument(args_src, position=3)

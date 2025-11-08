@@ -79,6 +79,21 @@ _LCD_PROGRESS_STYLES: Dict[str, str] = {
 }
 
 
+_LCD_ANIMATION_START_FUNCS: Dict[str, str] = {
+    "scroll": "__redu_lcd_start_scroll",
+    "blink": "__redu_lcd_start_blink",
+    "typewriter": "__redu_lcd_start_typewriter",
+    "bounce": "__redu_lcd_start_bounce",
+}
+
+_LCD_ANIMATION_TICK_FUNCS: Dict[str, str] = {
+    "scroll": "__redu_lcd_tick_scroll",
+    "blink": "__redu_lcd_tick_blink",
+    "typewriter": "__redu_lcd_tick_typewriter",
+    "bounce": "__redu_lcd_tick_bounce",
+}
+
+
 HEADER = """#include <Arduino.h>
 
 """
@@ -303,9 +318,23 @@ struct __redu_lcd_animation_state {
   bool loop;
   unsigned long last_step;
   int offset;
+  int direction;
+  int visible;
   bool active;
+  bool show;
+  int cycles;
   __redu_lcd_animation_state()
-      : text(""), row(0), speed_ms(0UL), loop(false), last_step(0UL), offset(0), active(false) {}
+      : text(""),
+        row(0),
+        speed_ms(0UL),
+        loop(false),
+        last_step(0UL),
+        offset(0),
+        direction(1),
+        visible(0),
+        active(false),
+        show(true),
+        cycles(0) {}
 };
 
 template <typename T>
@@ -323,7 +352,11 @@ void __redu_lcd_start_scroll(
   state.loop = loop;
   state.last_step = 0UL;
   state.offset = 0;
+  state.direction = 1;
+  state.visible = 0;
   state.active = true;
+  state.show = true;
+  state.cycles = 0;
   __redu_lcd_clear_row(lcd, cols, row);
   String initial = text;
   if (initial.length() > cols) {
@@ -386,6 +419,240 @@ void __redu_lcd_tick_scroll(
       state.active = false;
     }
   }
+}
+
+template <typename T>
+void __redu_lcd_start_blink(
+    __redu_lcd_animation_state &state,
+    T &lcd,
+    int cols,
+    int row,
+    const String &text,
+    unsigned long speed_ms,
+    bool loop) {
+  state.text = text;
+  state.row = row;
+  state.speed_ms = speed_ms;
+  state.loop = loop;
+  state.last_step = 0UL;
+  state.offset = 0;
+  state.direction = 1;
+  state.visible = text.length();
+  state.active = true;
+  state.show = true;
+  state.cycles = 0;
+  __redu_lcd_clear_row(lcd, cols, row);
+  String view = text;
+  if (view.length() > cols) {
+    view = view.substring(0, cols);
+  }
+  lcd.setCursor(0, row);
+  lcd.print(view);
+}
+
+template <typename T>
+void __redu_lcd_tick_blink(
+    __redu_lcd_animation_state &state,
+    T &lcd,
+    int cols) {
+  if (!state.active) {
+    return;
+  }
+  unsigned long now = millis();
+  if (state.speed_ms > 0UL && state.last_step > 0UL) {
+    unsigned long elapsed = now - state.last_step;
+    if (elapsed < state.speed_ms) {
+      return;
+    }
+  }
+  state.last_step = now;
+  state.show = !state.show;
+  if (state.show) {
+    String view = state.text;
+    if (view.length() > cols) {
+      view = view.substring(0, cols);
+    }
+    __redu_lcd_clear_row(lcd, cols, state.row);
+    lcd.setCursor(0, state.row);
+    lcd.print(view);
+  } else {
+    __redu_lcd_clear_row(lcd, cols, state.row);
+    state.cycles += 1;
+    if (!state.loop) {
+      state.active = false;
+    }
+  }
+}
+
+template <typename T>
+void __redu_lcd_start_typewriter(
+    __redu_lcd_animation_state &state,
+    T &lcd,
+    int cols,
+    int row,
+    const String &text,
+    unsigned long speed_ms,
+    bool loop) {
+  state.text = text;
+  state.row = row;
+  state.speed_ms = speed_ms;
+  state.loop = loop;
+  state.last_step = 0UL;
+  state.offset = 0;
+  state.direction = 1;
+  state.visible = text.length() > 0 ? 1 : 0;
+  state.active = true;
+  state.show = true;
+  state.cycles = 0;
+  __redu_lcd_clear_row(lcd, cols, row);
+  if (state.visible > 0) {
+    String view = text.substring(0, state.visible);
+    if (view.length() > cols) {
+      view = view.substring(0, cols);
+    }
+    lcd.setCursor(0, row);
+    lcd.print(view);
+  }
+}
+
+template <typename T>
+void __redu_lcd_tick_typewriter(
+    __redu_lcd_animation_state &state,
+    T &lcd,
+    int cols) {
+  if (!state.active) {
+    return;
+  }
+  unsigned long now = millis();
+  if (state.speed_ms > 0UL && state.last_step > 0UL) {
+    unsigned long elapsed = now - state.last_step;
+    if (elapsed < state.speed_ms) {
+      return;
+    }
+  }
+  state.last_step = now;
+  int length = state.text.length();
+  if (length <= 0) {
+    __redu_lcd_clear_row(lcd, cols, state.row);
+    state.active = state.loop;
+    return;
+  }
+  if (state.visible < length) {
+    state.visible += 1;
+    if (state.visible > length) {
+      state.visible = length;
+    }
+    String view = state.text.substring(0, state.visible);
+    if (view.length() > cols) {
+      view = view.substring(0, cols);
+    }
+    __redu_lcd_clear_row(lcd, cols, state.row);
+    lcd.setCursor(0, state.row);
+    lcd.print(view);
+    if (state.visible >= length && !state.loop) {
+      state.active = false;
+    }
+    return;
+  }
+  if (!state.loop) {
+    state.active = false;
+    return;
+  }
+  state.visible = 0;
+  __redu_lcd_clear_row(lcd, cols, state.row);
+}
+
+template <typename T>
+void __redu_lcd_start_bounce(
+    __redu_lcd_animation_state &state,
+    T &lcd,
+    int cols,
+    int row,
+    const String &text,
+    unsigned long speed_ms,
+    bool loop) {
+  state.text = text;
+  state.row = row;
+  state.speed_ms = speed_ms;
+  state.loop = loop;
+  state.last_step = 0UL;
+  state.offset = 0;
+  state.direction = 1;
+  state.visible = text.length();
+  state.active = true;
+  state.show = false;
+  state.cycles = 0;
+  __redu_lcd_clear_row(lcd, cols, row);
+  String view = text;
+  if (view.length() > cols) {
+    view = view.substring(0, cols);
+  }
+  lcd.setCursor(0, row);
+  lcd.print(view);
+}
+
+template <typename T>
+void __redu_lcd_tick_bounce(
+    __redu_lcd_animation_state &state,
+    T &lcd,
+    int cols) {
+  if (!state.active) {
+    return;
+  }
+  unsigned long now = millis();
+  if (state.speed_ms > 0UL && state.last_step > 0UL) {
+    unsigned long elapsed = now - state.last_step;
+    if (elapsed < state.speed_ms) {
+      return;
+    }
+  }
+  state.last_step = now;
+  int length = state.text.length();
+  if (length <= 0) {
+    __redu_lcd_clear_row(lcd, cols, state.row);
+    state.active = state.loop;
+    return;
+  }
+  if (length >= cols) {
+    String view = state.text.substring(0, cols);
+    __redu_lcd_clear_row(lcd, cols, state.row);
+    lcd.setCursor(0, state.row);
+    lcd.print(view);
+    state.active = state.loop;
+    return;
+  }
+  int max_offset = cols - length;
+  if (max_offset <= 0) {
+    state.active = state.loop;
+    return;
+  }
+  state.offset += state.direction;
+  if (state.offset >= max_offset) {
+    state.offset = max_offset;
+    state.direction = -1;
+    state.show = true;
+  } else if (state.offset <= 0) {
+    state.offset = 0;
+    state.direction = 1;
+    if (state.show) {
+      state.cycles += 1;
+      state.show = false;
+      if (!state.loop && state.cycles >= 1) {
+        state.active = false;
+      }
+    }
+  }
+  __redu_lcd_clear_row(lcd, cols, state.row);
+  int available = cols - state.offset;
+  if (available < 0) {
+    available = 0;
+  }
+  lcd.setCursor(state.offset, state.row);
+  String view = state.text;
+  if (view.length() > available) {
+    view = view.substring(0, available);
+  }
+  lcd.print(view);
 }
 
 template <typename T>
@@ -525,7 +792,7 @@ def _emit_block(
     servo_state: Dict[str, Dict[str, str]],
     lcd_decls: Dict[str, LCDDecl],
     lcd_state: Dict[str, Dict[str, str]],
-    lcd_animations: Dict[str, List[str]],
+    lcd_animations: Dict[str, List[Tuple[str, str]]],
     lcd_animation_counter: Dict[str, int],
     indent: str = "  ",
     *,
@@ -1146,16 +1413,23 @@ def _emit_block(
             info = _ensure_lcd(node.name)
             if info is None:
                 continue
+            try:
+                start_func = _LCD_ANIMATION_START_FUNCS[node.animation]
+                tick_kind = node.animation
+            except KeyError as exc:
+                allowed = ", ".join(sorted(_LCD_ANIMATION_START_FUNCS))
+                raise ValueError(
+                    f"unsupported LCD animation: {node.animation!r} (choose from {allowed})"
+                ) from exc
             counter = lcd_animation_counter.get(node.name, 0)
             var_name = f"__redu_lcd_anim_{node.name}_{counter}"
             lcd_animation_counter[node.name] = counter + 1
             anim_list = lcd_animations.setdefault(node.name, [])
-            if var_name not in anim_list:
-                anim_list.append(var_name)
+            anim_list.append((var_name, tick_kind))
             speed_expr = _emit_expr(node.speed_ms)
             row_expr = _emit_expr(node.row)
             lines.append(
-                f"{indent}__redu_lcd_start_scroll({var_name}, {info['object']}, {info['cols_var']}, static_cast<int>({row_expr}), {_string_expr(node.text)}, static_cast<unsigned long>({speed_expr}), {_bool_expr(node.loop)});"
+                f"{indent}{start_func}({var_name}, {info['object']}, {info['cols_var']}, static_cast<int>({row_expr}), {_string_expr(node.text)}, static_cast<unsigned long>({speed_expr}), {_bool_expr(node.loop)});"
             )
             continue
 
@@ -1163,9 +1437,12 @@ def _emit_block(
             info = _ensure_lcd(node.name)
             if info is None:
                 continue
-            for anim_var in lcd_animations.get(node.name, []):
+            for anim_var, anim_kind in lcd_animations.get(node.name, []):
+                tick_func = _LCD_ANIMATION_TICK_FUNCS.get(anim_kind)
+                if tick_func is None:
+                    continue
                 lines.append(
-                    f"{indent}__redu_lcd_tick_scroll({anim_var}, {info['object']}, {info['cols_var']});"
+                    f"{indent}{tick_func}({anim_var}, {info['object']}, {info['cols_var']});"
                 )
             continue
 
@@ -1890,7 +2167,7 @@ def emit(ast: Program) -> str:
     servo_used = False
     lcd_decls: Dict[str, LCDDecl] = {}
     lcd_state: Dict[str, Dict[str, str]] = {}
-    lcd_animations: Dict[str, List[str]] = {}
+    lcd_animations: Dict[str, List[Tuple[str, str]]] = {}
     lcd_animation_counter: Dict[str, int] = {}
     lcd_parallel_used = False
     lcd_i2c_used = False
@@ -2396,7 +2673,7 @@ def emit(ast: Program) -> str:
 
     if lcd_state:
         for name, vars in lcd_animations.items():
-            for var in vars:
+            for var, _ in vars:
                 line = f"__redu_lcd_animation_state {var};"
                 if line not in globals_:
                     globals_.append(line)
@@ -2424,7 +2701,7 @@ def emit(ast: Program) -> str:
             servo_state,
             dict(lcd_decls),
             {name: dict(info) for name, info in lcd_state.items()},
-            {name: list(values) for name, values in lcd_animations.items()},
+            {name: [(var, kind) for var, kind in values] for name, values in lcd_animations.items()},
             dict(lcd_animation_counter),
             indent="  ",
             in_setup=False,

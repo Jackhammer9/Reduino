@@ -52,6 +52,73 @@ def test_lcd_runtime_animation_tick() -> None:
     assert second_state == "BC   "
 
 
+def test_lcd_runtime_blink_animation() -> None:
+    lcd = LCD(rs=12, en=11, d4=5, d5=4, d6=3, d7=2, cols=6, rows=1)
+
+    lcd.animate("blink", 0, "HELLO", speed_ms=0, loop=False)
+    first = lcd.dump().splitlines()[0]
+    lcd.tick(now_ms=1)
+    second = lcd.dump().splitlines()[0]
+
+    assert first.startswith("HELLO")
+    assert second == " " * 6
+
+    lcd.animate("blink", 0, "ON", speed_ms=0, loop=True)
+    lcd.tick(now_ms=2)
+    mid = lcd.dump().splitlines()[0]
+    lcd.tick(now_ms=3)
+    final = lcd.dump().splitlines()[0]
+
+    assert mid == " " * 6
+    assert final.startswith("ON")
+
+
+def test_lcd_runtime_typewriter_animation() -> None:
+    lcd = LCD(i2c_addr=0x27, cols=4, rows=1)
+
+    lcd.animate("typewriter", 0, "WAVE", speed_ms=0, loop=False)
+    first = lcd.dump().splitlines()[0]
+    lcd.tick(now_ms=1)
+    second = lcd.dump().splitlines()[0]
+    lcd.tick(now_ms=2)
+    third = lcd.dump().splitlines()[0]
+
+    assert first.startswith("W")
+    assert second.startswith("WA")
+    assert third.startswith("WAV")
+
+    lcd.animate("typewriter", 0, "AB", speed_ms=0, loop=True)
+    lcd.tick(now_ms=3)
+    looped = lcd.dump().splitlines()[0]
+    assert looped.startswith("AB")
+    lcd.tick(now_ms=4)
+    cleared = lcd.dump().splitlines()[0]
+    assert cleared.strip() == ""
+    lcd.tick(now_ms=5)
+    restarted = lcd.dump().splitlines()[0]
+    assert restarted.startswith("A")
+
+
+def test_lcd_runtime_bounce_animation() -> None:
+    lcd = LCD(rs=12, en=11, d4=5, d5=4, d6=3, d7=2, cols=5, rows=1)
+
+    lcd.animate("bounce", 0, "HI", speed_ms=0, loop=False)
+    frames = [lcd.dump().splitlines()[0]]
+    for tick in range(1, 7):
+        lcd.tick(now_ms=tick)
+        frames.append(lcd.dump().splitlines()[0])
+
+    assert frames[0].startswith("HI")
+    assert any(frame.strip() == "HI" and frame.startswith(" ") for frame in frames)
+    assert frames[-1].startswith("HI")
+
+    lcd.animate("bounce", 0, "UP", speed_ms=0, loop=True)
+    lcd.tick(now_ms=3)
+    lcd.tick(now_ms=4)
+    repeat = lcd.dump().splitlines()[0]
+    assert repeat.strip()
+
+
 def test_lcd_brightness_constraints() -> None:
     lcd = LCD(rs=7, en=6, d4=5, d5=4, d6=3, d7=2, cols=16, rows=2)
     with pytest.raises(RuntimeError):
@@ -79,6 +146,9 @@ def test_lcd_clear_and_glyph_storage() -> None:
 
     with pytest.raises(ValueError):
         lcd.glyph(0, [0, 1, 2])
+
+    with pytest.raises(ValueError):
+        lcd.animate("spiral", 0, "oops")
 
 
 def test_lcd_display_controls_backlight_state() -> None:

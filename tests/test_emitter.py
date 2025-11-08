@@ -345,6 +345,31 @@ def test_emit_lcd_i2c_animation_injects_tick(src, norm) -> None:
     assert "delay(" not in loop_section
 
 
+def test_emit_lcd_animation_variants(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Displays import LCD
+
+            lcd = LCD(rs=12, en=11, d4=5, d5=4, d6=3, d7=2, cols=16, rows=2)
+            lcd.animate("blink", 0, "Blink", loop=True)
+            lcd.animate("typewriter", 1, "Typing", speed_ms=120)
+            lcd.animate("bounce", 0, "Go", speed_ms=90)
+            """
+        )
+    )
+
+    text = norm(cpp)
+    loop_section = norm(cpp.split("void loop()", 1)[1])
+
+    assert "__redu_lcd_start_blink(" in text
+    assert "__redu_lcd_start_typewriter(" in text
+    assert "__redu_lcd_start_bounce(" in text
+    assert "__redu_lcd_tick_blink(" in loop_section
+    assert "__redu_lcd_tick_typewriter(" in loop_section
+    assert "__redu_lcd_tick_bounce(" in loop_section
+
+
 def test_emit_lcd_display_controls_backlight(src, norm) -> None:
     cpp = compile_source(
         src(

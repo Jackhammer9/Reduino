@@ -285,10 +285,17 @@ s.write(0)
 | `brightness(level)` | Set PWM backlight brightness (parallel mode with `backlight_pin`). |
 | `glyph(slot, bitmap)` | Upload a custom 5×8 glyph (`bitmap` = 8 integers). |
 | `progress(row, value, max_value=100, width=None, label=None, style="block")` | Render a progress bar (`style` = `"block"`, `"hash"`, `"pipe"`, or `"dot"`). |
-| `animate("scroll", row, text, speed_ms=200, loop=False)` | Start a non-blocking marquee; the transpiler injects the required loop `tick()`. |
+| `animate(style, row, text, speed_ms=200, loop=False)` | Start a non-blocking animation (`style` = `"scroll"`, `"blink"`, `"typewriter"`, or `"bounce"`); the transpiler injects the required loop `tick()`. |
 
 > [!NOTE]
 > `brightness()` is available only when a parallel display is created with `backlight_pin`. All alignment parameters accept `"left"`, `"center"`, or `"right"` (case-insensitive).
+
+Available animation styles:
+
+* `scroll` – marquee-style horizontal scrolling.
+* `blink` – toggles the text on and off without blocking.
+* `typewriter` – reveals the message one character at a time.
+* `bounce` – slides the text from edge to edge before reversing.
 
 **Parallel wiring example (PWM backlight + progress bar)**
 
