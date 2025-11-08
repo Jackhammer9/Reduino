@@ -45,6 +45,132 @@ class PotentiometerDecl:
 
 
 @dataclass
+class LCDDecl:
+    """Declare an HD44780 compatible LCD display."""
+
+    name: str
+    cols: Union[int, str]
+    rows: Union[int, str]
+    interface: str = "parallel"
+    rs: Optional[Union[int, str]] = None
+    en: Optional[Union[int, str]] = None
+    d4: Optional[Union[int, str]] = None
+    d5: Optional[Union[int, str]] = None
+    d6: Optional[Union[int, str]] = None
+    d7: Optional[Union[int, str]] = None
+    rw: Optional[Union[int, str]] = None
+    backlight_pin: Optional[Union[int, str]] = None
+    i2c_addr: Optional[Union[int, str]] = None
+
+
+@dataclass
+class LCDWrite:
+    """Write ``text`` to a specific column/row on the LCD."""
+
+    name: str
+    col: Union[int, str]
+    row: Union[int, str]
+    text: str
+    clear_row: Union[bool, str] = True
+    align: str = "left"
+
+
+@dataclass
+class LCDMessage:
+    """Write optional messages to the first two LCD rows."""
+
+    name: str
+    top: Optional[str] = None
+    bottom: Optional[str] = None
+    top_align: str = "left"
+    bottom_align: str = "left"
+    clear_rows: Union[bool, str] = True
+
+
+@dataclass
+class LCDLine:
+    """Write text to a single LCD row."""
+
+    name: str
+    row: Union[int, str]
+    text: str
+    align: str = "left"
+    clear_row: Union[bool, str] = True
+
+
+@dataclass
+class LCDClear:
+    """Clear the LCD."""
+
+    name: str
+
+
+@dataclass
+class LCDDisplay:
+    """Toggle the LCD display visibility."""
+
+    name: str
+    on: Union[bool, str]
+
+
+@dataclass
+class LCDBacklight:
+    """Toggle the LCD backlight."""
+
+    name: str
+    on: Union[bool, str]
+
+
+@dataclass
+class LCDBrightness:
+    """Adjust LCD backlight brightness."""
+
+    name: str
+    level: Union[int, str]
+
+
+@dataclass
+class LCDGlyph:
+    """Register a custom glyph bitmap."""
+
+    name: str
+    slot: Union[int, str]
+    bitmap: List[int]
+
+
+@dataclass
+class LCDProgress:
+    """Render a progress bar on the LCD."""
+
+    name: str
+    row: Union[int, str]
+    value: Union[int, str]
+    max_value: Union[int, str] = 100
+    width: Optional[Union[int, str]] = None
+    style: str = "block"
+    label: Optional[str] = None
+
+
+@dataclass
+class LCDAnimate:
+    """Start a non-blocking LCD animation."""
+
+    name: str
+    animation: str
+    row: Union[int, str]
+    text: str
+    speed_ms: Union[int, str] = 200
+    loop: Union[bool, str] = False
+
+
+@dataclass
+class LCDTick:
+    """Advance LCD animations within loop()."""
+
+    name: str
+
+
+@dataclass
 class LedDecl:
     """Declare an LED instance bound to ``pin``."""
 

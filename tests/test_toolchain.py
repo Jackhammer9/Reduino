@@ -4,7 +4,7 @@ import pathlib
 
 from Reduino import _collect_required_libraries
 from Reduino.toolchain.pio import write_project
-from Reduino.transpile.ast import Program, ServoDecl
+from Reduino.transpile.ast import LCDDecl, Program, ServoDecl
 
 
 def _read_ini(tmp_path: pathlib.Path) -> str:
@@ -41,3 +41,40 @@ def test_collect_required_libraries_detects_servo() -> None:
 def test_collect_required_libraries_handles_absence() -> None:
     program = Program()
     assert _collect_required_libraries(program) == []
+
+
+def test_collect_required_libraries_detects_parallel_lcd() -> None:
+    program = Program(
+        setup_body=[
+            LCDDecl(
+                name="lcd",
+                cols=16,
+                rows=2,
+                interface="parallel",
+                rs=12,
+                en=11,
+                d4=5,
+                d5=4,
+                d6=3,
+                d7=2,
+            )
+        ]
+    )
+
+    assert _collect_required_libraries(program) == ["LiquidCrystal"]
+
+
+def test_collect_required_libraries_detects_i2c_lcd() -> None:
+    program = Program(
+        setup_body=[
+            LCDDecl(
+                name="panel",
+                cols=20,
+                rows=4,
+                interface="i2c",
+                i2c_addr="0x27",
+            )
+        ]
+    )
+
+    assert _collect_required_libraries(program) == ["LiquidCrystal_I2C"]

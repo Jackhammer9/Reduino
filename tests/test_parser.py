@@ -11,6 +11,18 @@ from Reduino.transpile.ast import (
     BuzzerPlayTone,
     BuzzerStop,
     BuzzerSweep,
+    LCDAnimate,
+    LCDBacklight,
+    LCDBrightness,
+    LCDClear,
+    LCDDecl,
+    LCDDisplay,
+    LCDGlyph,
+    LCDLine,
+    LCDMessage,
+    LCDProgress,
+    LCDTick,
+    LCDWrite,
     BreakStmt,
     ButtonDecl,
     ButtonPoll,
@@ -265,6 +277,49 @@ def test_parser_serial_monitor(src) -> None:
     writes = [node for node in program.setup_body if isinstance(node, SerialWrite)]
     assert len(writes) == 1
     assert writes[0].value == '"hello"'
+
+
+def test_parser_lcd_support(src) -> None:
+    code = src(
+        """
+        from Reduino.Displays import LCD
+
+        parallel = LCD(rs=12, en=11, d4=5, d5=4, d6=3, d7=2, cols=20, rows=4, backlight_pin=9)
+        backpack = LCD(i2c_addr=0x27, cols=16, rows=2)
+
+        parallel.write(0, 0, "Hello", align="center")
+        parallel.line(1, "World", clear_row=False, align="right")
+        parallel.message("Top", bottom="Bottom", clear_rows=False)
+        parallel.clear()
+        parallel.display(False)
+        parallel.backlight(True)
+        parallel.brightness(128)
+        parallel.glyph(0, [0, 1, 2, 3, 4, 5, 6, 7])
+        parallel.progress(1, 50, max_value=100, width=10, label="Load")
+        parallel.animate("scroll", 0, "Demo", speed_ms=250, loop=True)
+        backpack.write(1, 1, "Hi")
+        """
+    )
+
+    program = _parse(code)
+    lcd_decls = [node for node in program.setup_body if isinstance(node, LCDDecl)]
+    assert len(lcd_decls) == 2
+    assert any(node.interface == "parallel" for node in lcd_decls)
+    assert any(node.interface == "i2c" for node in lcd_decls)
+
+    lcd_nodes = [node for node in program.setup_body if node.__class__.__name__.startswith("LCD")]
+    assert any(isinstance(node, LCDWrite) for node in lcd_nodes)
+    assert any(isinstance(node, LCDLine) for node in lcd_nodes)
+    assert any(isinstance(node, LCDMessage) for node in lcd_nodes)
+    assert any(isinstance(node, LCDClear) for node in lcd_nodes)
+    assert any(isinstance(node, LCDDisplay) for node in lcd_nodes)
+    assert any(isinstance(node, LCDBacklight) for node in lcd_nodes)
+    assert any(isinstance(node, LCDBrightness) for node in lcd_nodes)
+    assert any(isinstance(node, LCDGlyph) for node in lcd_nodes)
+    assert any(isinstance(node, LCDProgress) for node in lcd_nodes)
+    assert any(isinstance(node, LCDAnimate) for node in lcd_nodes)
+
+    assert any(isinstance(node, LCDTick) for node in program.loop_body)
 
 
 def test_parser_rgb_led_nodes(src) -> None:
