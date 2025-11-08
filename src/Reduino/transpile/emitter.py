@@ -412,8 +412,9 @@ void __redu_lcd_progress(
     filled = width;
   }
   String bar = "";
+  const char full_block = static_cast<char>(0xff);
   for (int i = 0; i < width; ++i) {
-    bar += (i < filled) ? String('\xff') : String(' ');
+    bar += (i < filled) ? full_block : ' ';
   }
   String text = label.length() ? (label + " " + bar) : bar;
   if (text.length() > cols) {
