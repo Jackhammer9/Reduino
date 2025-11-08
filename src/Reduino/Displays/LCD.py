@@ -194,7 +194,9 @@ class LCD:
     def display(self, on: bool) -> None:
         """Toggle the simulated display power state."""
 
-        self.display_on = bool(on)
+        state = bool(on)
+        self.display_on = state
+        self.backlight_on = state
 
     def backlight(self, on: bool) -> None:
         """Toggle the simulated backlight state."""

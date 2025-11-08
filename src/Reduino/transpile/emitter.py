@@ -1012,15 +1012,41 @@ def _emit_block(
             info = _ensure_lcd(node.name)
             if info is None:
                 continue
+            interface = info.get("interface")
+            backlight_pin = info.get("backlight_pin")
+            brightness_var = info.get("brightness_var")
+            state_var = info.get("backlight_state_var")
             if isinstance(node.on, bool):
-                method = "display" if node.on else "noDisplay"
-                lines.append(f"{indent}{info['object']}.{method}();")
+                if node.on:
+                    lines.append(f"{indent}{info['object']}.display();")
+                    if interface == "i2c":
+                        lines.append(f"{indent}{info['object']}.backlight();")
+                    elif backlight_pin and brightness_var and state_var:
+                        lines.append(f"{indent}{state_var} = true;")
+                        lines.append(f"{indent}analogWrite({backlight_pin}, {brightness_var});")
+                else:
+                    lines.append(f"{indent}{info['object']}.noDisplay();")
+                    if interface == "i2c":
+                        lines.append(f"{indent}{info['object']}.noBacklight();")
+                    elif backlight_pin and brightness_var and state_var:
+                        lines.append(f"{indent}{state_var} = false;")
+                        lines.append(f"{indent}analogWrite({backlight_pin}, 0);")
             else:
                 on_expr = _bool_expr(node.on)
                 lines.append(f"{indent}if ({on_expr}) {{")
                 lines.append(f"{indent}  {info['object']}.display();")
+                if interface == "i2c":
+                    lines.append(f"{indent}  {info['object']}.backlight();")
+                elif backlight_pin and brightness_var and state_var:
+                    lines.append(f"{indent}  {state_var} = true;")
+                    lines.append(f"{indent}  analogWrite({backlight_pin}, {brightness_var});")
                 lines.append(f"{indent}}} else {{")
                 lines.append(f"{indent}  {info['object']}.noDisplay();")
+                if interface == "i2c":
+                    lines.append(f"{indent}  {info['object']}.noBacklight();")
+                elif backlight_pin and brightness_var and state_var:
+                    lines.append(f"{indent}  {state_var} = false;")
+                    lines.append(f"{indent}  analogWrite({backlight_pin}, 0);")
                 lines.append(f"{indent}}}")
             continue
 

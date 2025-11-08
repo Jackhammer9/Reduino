@@ -59,3 +59,21 @@ def test_lcd_clear_and_glyph_storage() -> None:
 
     with pytest.raises(ValueError):
         lcd.glyph(0, [0, 1, 2])
+
+
+def test_lcd_display_controls_backlight_state() -> None:
+    lcd = LCD(rs=12, en=11, d4=5, d5=4, d6=3, d7=2, cols=16, rows=2, backlight_pin=9)
+
+    lcd.display(False)
+    assert not lcd.display_on
+    assert not lcd.backlight_on
+
+    lcd.backlight(False)
+    lcd.display(True)
+    assert lcd.display_on
+    assert lcd.backlight_on
+
+    panel = LCD(i2c_addr=0x27, cols=16, rows=2)
+    panel.display(False)
+    assert not panel.display_on
+    assert not panel.backlight_on

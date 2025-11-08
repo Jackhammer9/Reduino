@@ -325,3 +325,34 @@ def test_emit_lcd_i2c_animation_injects_tick(src, norm) -> None:
     assert "__redu_lcd_start_scroll(__redu_lcd_anim_panel_0" in setup_section
     assert "__redu_lcd_tick_scroll(__redu_lcd_anim_panel_0" in loop_section
     assert "delay(" not in loop_section
+
+
+def test_emit_lcd_display_controls_backlight(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Displays import LCD
+
+            lcd = LCD(rs=12, en=11, d4=5, d5=4, d6=3, d7=2, backlight_pin=6)
+            lcd.display(False)
+            lcd.display(True)
+
+            panel = LCD(i2c_addr=0x27, cols=16, rows=2)
+            panel.display(False)
+            panel.display(True)
+            """
+        )
+    )
+
+    setup_section = cpp.split("void setup() {", 1)[1].split("void loop()", 1)[0]
+    assert "__redu_lcd_lcd.noDisplay();" in setup_section
+    assert "__redu_lcd_backlight_state_lcd = false;" in setup_section
+    assert "analogWrite(6, 0);" in setup_section
+    assert "__redu_lcd_lcd.display();" in setup_section
+    assert "__redu_lcd_backlight_state_lcd = true;" in setup_section
+    assert "analogWrite(6, __redu_lcd_brightness_lcd);" in setup_section
+
+    assert "__redu_lcd_panel.noDisplay();" in setup_section
+    assert "__redu_lcd_panel.noBacklight();" in setup_section
+    assert "__redu_lcd_panel.display();" in setup_section
+    assert "__redu_lcd_panel.backlight();" in setup_section
