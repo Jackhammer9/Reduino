@@ -3734,9 +3734,17 @@ def _parse_simple_lines(
         if m:
             name, args_src = m.group(1), m.group(2)
             if name in lcd_names:
-                anim_arg = _extract_call_argument(args_src, position=0)
-                row_arg = _extract_call_argument(args_src, position=1)
-                text_arg = _extract_call_argument(args_src, position=2)
+                anim_arg = _extract_call_argument(args_src, keyword="style")
+                if anim_arg is None:
+                    anim_arg = _extract_call_argument(args_src, keyword="animation")
+                if anim_arg is None:
+                    anim_arg = _extract_call_argument(args_src, position=0)
+                row_arg = _extract_call_argument(args_src, keyword="row")
+                if row_arg is None:
+                    row_arg = _extract_call_argument(args_src, position=1)
+                text_arg = _extract_call_argument(args_src, keyword="text")
+                if text_arg is None:
+                    text_arg = _extract_call_argument(args_src, position=2)
                 if anim_arg is None or row_arg is None or text_arg is None:
                     raise ValueError("LCD.animate requires animation name, row and text")
                 animation_name = _resolve_animation_arg(anim_arg)

@@ -354,6 +354,28 @@ def test_parser_lcd_animation_variants(src) -> None:
         )
 
 
+def test_parser_lcd_animation_keyword_args(src) -> None:
+    program = _parse(
+        src(
+            """
+            from Reduino.Displays import LCD
+
+            lcd = LCD(rs=12, en=11, d4=5, d5=4, d6=3, d7=2)
+            lcd.animate(animation="bounce", row=0, text="Hello", speed_ms=150, loop=True)
+            """
+        )
+    )
+
+    animations = [node for node in program.setup_body if isinstance(node, LCDAnimate)]
+    assert len(animations) == 1
+    animation = animations[0]
+    assert animation.animation == "bounce"
+    assert animation.row == "0"
+    assert animation.text == '"Hello"'
+    assert animation.speed_ms == 150
+    assert animation.loop is True
+
+
 def test_parser_rgb_led_nodes(src) -> None:
     code = src(
         """
