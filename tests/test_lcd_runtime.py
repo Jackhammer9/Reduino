@@ -19,6 +19,26 @@ def test_lcd_parallel_alignment_and_progress() -> None:
     assert bottom == "Load ██   "
 
 
+def test_lcd_progress_styles_and_validation() -> None:
+    lcd = LCD(rs=12, en=11, d4=5, d5=4, d6=3, d7=2, cols=8, rows=1)
+
+    lcd.progress(0, 25, max_value=100, width=4, style="hash")
+    line = lcd.dump().splitlines()[0]
+    assert line[:4] == "#   "
+
+    lcd.progress(0, 50, max_value=100, width=4, style="pipe", label="P")
+    line = lcd.dump().splitlines()[0]
+    assert line.startswith("P ")
+    assert line[2:4] == "||"
+
+    lcd.progress(0, 75, max_value=100, width=4, style="dot")
+    line = lcd.dump().splitlines()[0]
+    assert line[:4] == "... "
+
+    with pytest.raises(ValueError):
+        lcd.progress(0, 10, style="zigzag")
+
+
 def test_lcd_runtime_animation_tick() -> None:
     lcd = LCD(i2c_addr=0x27, cols=5, rows=2)
 

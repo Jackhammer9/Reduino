@@ -295,7 +295,7 @@ def test_parser_lcd_support(src) -> None:
         parallel.backlight(True)
         parallel.brightness(128)
         parallel.glyph(0, [0, 1, 2, 3, 4, 5, 6, 7])
-        parallel.progress(1, 50, max_value=100, width=10, label="Load")
+        parallel.progress(1, 50, max_value=100, width=10, style="hash", label="Load")
         parallel.animate("scroll", 0, "Demo", speed_ms=250, loop=True)
         backpack.write(1, 1, "Hi")
         """
@@ -316,7 +316,9 @@ def test_parser_lcd_support(src) -> None:
     assert any(isinstance(node, LCDBacklight) for node in lcd_nodes)
     assert any(isinstance(node, LCDBrightness) for node in lcd_nodes)
     assert any(isinstance(node, LCDGlyph) for node in lcd_nodes)
-    assert any(isinstance(node, LCDProgress) for node in lcd_nodes)
+    progress_nodes = [node for node in lcd_nodes if isinstance(node, LCDProgress)]
+    assert progress_nodes
+    assert progress_nodes[0].style == "hash"
     assert any(isinstance(node, LCDAnimate) for node in lcd_nodes)
 
     assert any(isinstance(node, LCDTick) for node in program.loop_body)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence
+from typing import ClassVar, Dict, List, Optional, Sequence
 
 _ALIGN_OPTIONS = {"left", "center", "right"}
 
@@ -225,6 +225,13 @@ class LCD:
             raise ValueError("bitmap must contain 8 rows")
         self.glyphs[int(slot)] = values
 
+    _PROGRESS_STYLES: ClassVar[Dict[str, str]] = {
+        "block": "█",
+        "hash": "#",
+        "pipe": "|",
+        "dot": ".",
+    }
+
     def progress(
         self,
         row: int,
@@ -237,14 +244,18 @@ class LCD:
     ) -> None:
         """Render a basic horizontal progress bar."""
 
-        if style != "block":
-            raise ValueError("only the 'block' progress style is supported")
+        style_key = str(style).lower()
+        try:
+            glyph = self._PROGRESS_STYLES[style_key]
+        except KeyError as exc:
+            allowed = ", ".join(sorted(self._PROGRESS_STYLES))
+            raise ValueError(f"unsupported progress style: {style!r} (choose from {allowed})") from exc
         row_idx = self._validate_row(row)
         total_width = self.cols if width is None else max(1, min(self.cols, int(width)))
         ratio = 0 if max_value <= 0 else max(0.0, min(1.0, float(value) / float(max_value)))
         filled = int(round(ratio * total_width))
         empty = max(0, total_width - filled)
-        bar = "█" * filled + " " * empty
+        bar = glyph * filled + " " * empty
         if label:
             text = f"{label} {bar}"[: self.cols]
         else:

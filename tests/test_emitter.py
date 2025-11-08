@@ -299,6 +299,24 @@ def test_emit_lcd_parallel_support(src, norm) -> None:
         in text
     )
     assert "__redu_lcd_progress(__redu_lcd_lcd" in text
+    assert "static_cast<char>(0xff)" in text
+
+
+def test_emit_lcd_progress_alt_style(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Displays import LCD
+
+            panel = LCD(rs=12, en=11, d4=5, d5=4, d6=3, d7=2)
+            panel.progress(0, 10, max_value=100, style="hash")
+            """
+        )
+    )
+
+    text = norm(cpp)
+    assert "__redu_lcd_progress(__redu_lcd_panel" in text
+    assert "'#'" in text
 
 
 def test_emit_lcd_i2c_animation_injects_tick(src, norm) -> None:

@@ -71,6 +71,14 @@ except Exception:  # pragma: no cover - compatibility shim
         pass
 
 
+_LCD_PROGRESS_STYLES: Dict[str, str] = {
+    "block": "static_cast<char>(0xff)",
+    "hash": "'#'",
+    "pipe": "'|'",
+    "dot": "'.'",
+}
+
+
 HEADER = """#include <Arduino.h>
 
 """
@@ -388,6 +396,7 @@ void __redu_lcd_progress(
     int value,
     int max_value,
     int width,
+    char fill,
     const String &label) {
   if (cols <= 0) {
     return;
@@ -412,9 +421,8 @@ void __redu_lcd_progress(
     filled = width;
   }
   String bar = "";
-  const char full_block = static_cast<char>(0xff);
   for (int i = 0; i < width; ++i) {
-    bar += (i < filled) ? full_block : ' ';
+    bar += (i < filled) ? fill : ' ';
   }
   String text = label.length() ? (label + " " + bar) : bar;
   if (text.length() > cols) {
@@ -1114,6 +1122,13 @@ def _emit_block(
             info = _ensure_lcd(node.name)
             if info is None:
                 continue
+            try:
+                fill_expr = _LCD_PROGRESS_STYLES[node.style]
+            except KeyError as exc:
+                allowed = ", ".join(sorted(_LCD_PROGRESS_STYLES))
+                raise ValueError(
+                    f"unsupported LCD progress style: {node.style!r} (choose from {allowed})"
+                ) from exc
             row_expr = _emit_expr(node.row)
             value_expr = _emit_expr(node.value)
             max_expr = _emit_expr(node.max_value)
@@ -1123,7 +1138,7 @@ def _emit_block(
                 width_expr = f"static_cast<int>({_emit_expr(node.width)})"
             label_expr = _string_expr(node.label) if node.label is not None else "String(\"\")"
             lines.append(
-                f"{indent}__redu_lcd_progress({info['object']}, {info['cols_var']}, static_cast<int>({row_expr}), static_cast<int>({value_expr}), static_cast<int>({max_expr}), {width_expr}, {label_expr});"
+                f"{indent}__redu_lcd_progress({info['object']}, {info['cols_var']}, static_cast<int>({row_expr}), static_cast<int>({value_expr}), static_cast<int>({max_expr}), {width_expr}, {fill_expr}, {label_expr});"
             )
             continue
 

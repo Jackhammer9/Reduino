@@ -2161,11 +2161,13 @@ def _parse_simple_lines(
         return value
 
     def _resolve_style_arg(arg_src: Optional[str], default: str = "block") -> str:
+        allowed = {"block", "hash", "pipe", "dot"}
         if arg_src is None or not arg_src.strip():
             return default
         value = _require_string_literal(arg_src, "style").lower()
-        if value not in {"block"}:
-            raise ValueError("unknown progress style")
+        if value not in allowed:
+            options = ", ".join(sorted(allowed))
+            raise ValueError(f"unknown progress style: {value!r} (choose from {options})")
         return value
 
     i = 0

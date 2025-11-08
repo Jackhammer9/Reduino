@@ -284,7 +284,7 @@ s.write(0)
 | `clear()` / `display(on)` / `backlight(on)` | Clear the screen and toggle the LCD/backlight power. |
 | `brightness(level)` | Set PWM backlight brightness (parallel mode with `backlight_pin`). |
 | `glyph(slot, bitmap)` | Upload a custom 5×8 glyph (`bitmap` = 8 integers). |
-| `progress(row, value, max_value=100, width=None, label=None)` | Render a block-style progress bar. |
+| `progress(row, value, max_value=100, width=None, label=None, style="block")` | Render a progress bar (`style` = `"block"`, `"hash"`, `"pipe"`, or `"dot"`). |
 | `animate("scroll", row, text, speed_ms=200, loop=False)` | Start a non-blocking marquee; the transpiler injects the required loop `tick()`. |
 
 > [!NOTE]
