@@ -1121,8 +1121,9 @@ def _emit_block(
             continue
 
         if isinstance(node, ForRangeLoop):
+            limit_expr = _emit_expr(node.count)
             lines.append(
-                f"{indent}for (int {node.var_name} = 0; {node.var_name} < {node.count}; ++{node.var_name}) {{"
+                f"{indent}for (int {node.var_name} = 0; {node.var_name} < {limit_expr}; ++{node.var_name}) {{"
             )
             lines.extend(
                 _emit_block(

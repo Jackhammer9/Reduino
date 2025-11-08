@@ -268,6 +268,25 @@ def test_emit_for_range_and_try_except(src, norm) -> None:
     assert "catch (Exception &)" in cpp
 
 
+def test_emit_for_range_with_expression_limit(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Actuators import Led
+
+            led = Led(7)
+            total = 4
+            for step in range(total + 2):
+                led.on()
+            """
+        )
+    )
+
+    text = norm(cpp)
+    assert "for (int step = 0; step < (total + 2); ++step) {" in cpp
+    assert text.count("digitalWrite(7, HIGH);") == 1
+
+
 def test_emit_lcd_parallel_support(src, norm) -> None:
     cpp = compile_source(
         src(

@@ -1303,7 +1303,7 @@ RE_TARGET_INLINE = re.compile(
 RE_WHILE_TRUE     = re.compile(r"^\s*while\s+True\s*:\s*$")
 RE_WHILE          = re.compile(r"^\s*while\s+(.+?)\s*:\s*$")
 RE_FOR_RANGE      = re.compile(
-    r"^\s*for\s+([A-Za-z_]\w*)\s+in\s+range\(\s*(\d+)\s*\)\s*:\s*$"
+    r"^\s*for\s+([A-Za-z_]\w*)\s+in\s+range\((.*)\)\s*:\s*$"
 )
 RE_IF             = re.compile(r"^\s*if\s+(.+?)\s*:\s*$")
 RE_ELIF           = re.compile(r"^\s*elif\s+(.+?)\s*:\s*$")
@@ -2674,7 +2674,12 @@ def _parse_simple_lines(
         m = RE_FOR_RANGE.match(line)
         if m:
             var_name = m.group(1)
-            count = int(m.group(2))
+            args_src = m.group(2)
+            count_arg = _extract_call_argument(args_src, position=0)
+            extra_arg = _extract_call_argument(args_src, position=1)
+            if count_arg is None or extra_arg is not None:
+                raise ValueError("for-range loops require a single range(count) argument")
+            count = _resolve_numeric_arg(count_arg, 0)
             block, next_idx = _collect_block(snippet, i)
             child_ctx = dict(ctx)
             child_ctx["vars"] = dict(vars)

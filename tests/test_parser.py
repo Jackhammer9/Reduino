@@ -196,6 +196,23 @@ def test_parser_for_range_creates_loop_node(src) -> None:
     assert any(isinstance(stmt, LedToggle) for stmt in loop.body)
 
 
+def test_parser_for_range_accepts_expression_count(src) -> None:
+    code = src(
+        """
+        value = 5
+        for index in range(value + 2):
+            value = value
+        """
+    )
+
+    program = _parse(code)
+    loops = [node for node in program.setup_body if isinstance(node, ForRangeLoop)]
+    assert len(loops) == 1
+    loop = loops[0]
+    assert loop.var_name == "index"
+    assert loop.count == "(value + 2)"
+
+
 def test_parser_break_handling(src) -> None:
     code = src(
         """

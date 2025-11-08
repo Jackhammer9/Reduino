@@ -476,7 +476,7 @@ class ForRangeLoop:
     """A ``for`` loop over ``range(count)`` with a loop variable."""
 
     var_name: str
-    count: int
+    count: Union[int, str]
     body: List[object] = field(default_factory=list)
 
 
