@@ -17,6 +17,18 @@ from .ast import (
     BuzzerPlayTone,
     BuzzerStop,
     BuzzerSweep,
+    LCDAnimate,
+    LCDBacklight,
+    LCDBrightness,
+    LCDClear,
+    LCDDecl,
+    LCDDisplay,
+    LCDGlyph,
+    LCDLine,
+    LCDMessage,
+    LCDProgress,
+    LCDTick,
+    LCDWrite,
     IfStatement,
     LedBlink,
     LedDecl,
@@ -57,6 +69,29 @@ except Exception:  # pragma: no cover - compatibility shim
 
     class Repeat:  # type: ignore[too-many-ancestors]
         pass
+
+
+_LCD_PROGRESS_STYLES: Dict[str, str] = {
+    "block": "static_cast<char>(0xff)",
+    "hash": "'#'",
+    "pipe": "'|'",
+    "dot": "'.'",
+}
+
+
+_LCD_ANIMATION_START_FUNCS: Dict[str, str] = {
+    "scroll": "__redu_lcd_start_scroll",
+    "blink": "__redu_lcd_start_blink",
+    "typewriter": "__redu_lcd_start_typewriter",
+    "bounce": "__redu_lcd_start_bounce",
+}
+
+_LCD_ANIMATION_TICK_FUNCS: Dict[str, str] = {
+    "scroll": "__redu_lcd_tick_scroll",
+    "blink": "__redu_lcd_tick_blink",
+    "typewriter": "__redu_lcd_tick_typewriter",
+    "bounce": "__redu_lcd_tick_bounce",
+}
 
 
 HEADER = """#include <Arduino.h>
@@ -209,6 +244,462 @@ size_t __redu_len(const __redu_list<T> &value) {
   return value.size;
 }
 """
+
+LCD_HELPER_SNIPPET = """enum __redu_lcd_align {
+  __redu_lcd_align_left = 0,
+  __redu_lcd_align_center = 1,
+  __redu_lcd_align_right = 2
+};
+
+template <typename T>
+void __redu_lcd_clear_row(T &lcd, int cols, int row) {
+  if (cols <= 0) {
+    return;
+  }
+  lcd.setCursor(0, row);
+  for (int i = 0; i < cols; ++i) {
+    lcd.print(' ');
+  }
+}
+
+template <typename T>
+void __redu_lcd_write_aligned(
+    T &lcd,
+    int cols,
+    int col,
+    int row,
+    const String &text,
+    bool clear_row,
+    __redu_lcd_align align) {
+  if (cols <= 0) {
+    return;
+  }
+  if (col < 0) {
+    col = 0;
+  }
+  if (col >= cols) {
+    return;
+  }
+  if (clear_row) {
+    __redu_lcd_clear_row(lcd, cols, row);
+  }
+  int available = cols - col;
+  if (available <= 0) {
+    return;
+  }
+  String content = text;
+  if (content.length() > available) {
+    content = content.substring(0, available);
+  }
+  int offset = col;
+  int room = available - content.length();
+  if (room < 0) {
+    room = 0;
+  }
+  if (align == __redu_lcd_align_center) {
+    offset = col + room / 2;
+  } else if (align == __redu_lcd_align_right) {
+    offset = col + room;
+  }
+  if (offset + content.length() > cols) {
+    offset = cols - content.length();
+    if (offset < col) {
+      offset = col;
+    }
+  }
+  lcd.setCursor(offset, row);
+  lcd.print(content);
+}
+
+struct __redu_lcd_animation_state {
+  String text;
+  int row;
+  unsigned long speed_ms;
+  bool loop;
+  unsigned long last_step;
+  int offset;
+  int direction;
+  int visible;
+  bool active;
+  bool show;
+  int cycles;
+  __redu_lcd_animation_state()
+      : text(""),
+        row(0),
+        speed_ms(0UL),
+        loop(false),
+        last_step(0UL),
+        offset(0),
+        direction(1),
+        visible(0),
+        active(false),
+        show(true),
+        cycles(0) {}
+};
+
+template <typename T>
+void __redu_lcd_start_scroll(
+    __redu_lcd_animation_state &state,
+    T &lcd,
+    int cols,
+    int row,
+    const String &text,
+    unsigned long speed_ms,
+    bool loop) {
+  state.text = text;
+  state.row = row;
+  state.speed_ms = speed_ms;
+  state.loop = loop;
+  state.last_step = 0UL;
+  state.offset = 0;
+  state.direction = 1;
+  state.visible = 0;
+  state.active = true;
+  state.show = true;
+  state.cycles = 0;
+  __redu_lcd_clear_row(lcd, cols, row);
+  String initial = text;
+  if (initial.length() > cols) {
+    initial = initial.substring(0, cols);
+  }
+  lcd.setCursor(0, row);
+  lcd.print(initial);
+}
+
+template <typename T>
+void __redu_lcd_tick_scroll(
+    __redu_lcd_animation_state &state,
+    T &lcd,
+    int cols) {
+  if (!state.active) {
+    return;
+  }
+  unsigned long now = millis();
+  if (state.speed_ms > 0UL && state.last_step > 0UL) {
+    unsigned long elapsed = now - state.last_step;
+    if (elapsed < state.speed_ms) {
+      return;
+    }
+  }
+  state.last_step = now;
+  String padded = state.text;
+  if (padded.length() < cols) {
+    int deficit = cols - padded.length();
+    for (int i = 0; i < deficit; ++i) {
+      padded += ' ';
+    }
+  }
+  for (int i = 0; i < cols; ++i) {
+    padded += ' ';
+  }
+  if (padded.length() == 0) {
+    return;
+  }
+  if (state.offset >= padded.length()) {
+    state.offset = 0;
+  }
+  int start = state.offset;
+  int end = start + cols;
+  String window = "";
+  for (int i = start; i < end; ++i) {
+    int index = i;
+    if (index >= padded.length()) {
+      index -= padded.length();
+    }
+    window += padded[index];
+  }
+  __redu_lcd_clear_row(lcd, cols, state.row);
+  lcd.setCursor(0, state.row);
+  lcd.print(window);
+  state.offset += 1;
+  if (state.offset >= padded.length()) {
+    if (state.loop) {
+      state.offset = 0;
+    } else {
+      state.active = false;
+    }
+  }
+}
+
+template <typename T>
+void __redu_lcd_start_blink(
+    __redu_lcd_animation_state &state,
+    T &lcd,
+    int cols,
+    int row,
+    const String &text,
+    unsigned long speed_ms,
+    bool loop) {
+  state.text = text;
+  state.row = row;
+  state.speed_ms = speed_ms;
+  state.loop = loop;
+  state.last_step = 0UL;
+  state.offset = 0;
+  state.direction = 1;
+  state.visible = text.length();
+  state.active = true;
+  state.show = true;
+  state.cycles = 0;
+  __redu_lcd_clear_row(lcd, cols, row);
+  String view = text;
+  if (view.length() > cols) {
+    view = view.substring(0, cols);
+  }
+  lcd.setCursor(0, row);
+  lcd.print(view);
+}
+
+template <typename T>
+void __redu_lcd_tick_blink(
+    __redu_lcd_animation_state &state,
+    T &lcd,
+    int cols) {
+  if (!state.active) {
+    return;
+  }
+  unsigned long now = millis();
+  if (state.speed_ms > 0UL && state.last_step > 0UL) {
+    unsigned long elapsed = now - state.last_step;
+    if (elapsed < state.speed_ms) {
+      return;
+    }
+  }
+  state.last_step = now;
+  state.show = !state.show;
+  if (state.show) {
+    String view = state.text;
+    if (view.length() > cols) {
+      view = view.substring(0, cols);
+    }
+    __redu_lcd_clear_row(lcd, cols, state.row);
+    lcd.setCursor(0, state.row);
+    lcd.print(view);
+  } else {
+    __redu_lcd_clear_row(lcd, cols, state.row);
+    state.cycles += 1;
+    if (!state.loop) {
+      state.active = false;
+    }
+  }
+}
+
+template <typename T>
+void __redu_lcd_start_typewriter(
+    __redu_lcd_animation_state &state,
+    T &lcd,
+    int cols,
+    int row,
+    const String &text,
+    unsigned long speed_ms,
+    bool loop) {
+  state.text = text;
+  state.row = row;
+  state.speed_ms = speed_ms;
+  state.loop = loop;
+  state.last_step = 0UL;
+  state.offset = 0;
+  state.direction = 1;
+  state.visible = text.length() > 0 ? 1 : 0;
+  state.active = true;
+  state.show = true;
+  state.cycles = 0;
+  __redu_lcd_clear_row(lcd, cols, row);
+  if (state.visible > 0) {
+    String view = text.substring(0, state.visible);
+    if (view.length() > cols) {
+      view = view.substring(0, cols);
+    }
+    lcd.setCursor(0, row);
+    lcd.print(view);
+  }
+}
+
+template <typename T>
+void __redu_lcd_tick_typewriter(
+    __redu_lcd_animation_state &state,
+    T &lcd,
+    int cols) {
+  if (!state.active) {
+    return;
+  }
+  unsigned long now = millis();
+  if (state.speed_ms > 0UL && state.last_step > 0UL) {
+    unsigned long elapsed = now - state.last_step;
+    if (elapsed < state.speed_ms) {
+      return;
+    }
+  }
+  state.last_step = now;
+  int length = state.text.length();
+  if (length <= 0) {
+    __redu_lcd_clear_row(lcd, cols, state.row);
+    state.active = state.loop;
+    return;
+  }
+  if (state.visible < length) {
+    state.visible += 1;
+    if (state.visible > length) {
+      state.visible = length;
+    }
+    String view = state.text.substring(0, state.visible);
+    if (view.length() > cols) {
+      view = view.substring(0, cols);
+    }
+    __redu_lcd_clear_row(lcd, cols, state.row);
+    lcd.setCursor(0, state.row);
+    lcd.print(view);
+    if (state.visible >= length && !state.loop) {
+      state.active = false;
+    }
+    return;
+  }
+  if (!state.loop) {
+    state.active = false;
+    return;
+  }
+  state.visible = 0;
+  __redu_lcd_clear_row(lcd, cols, state.row);
+}
+
+template <typename T>
+void __redu_lcd_start_bounce(
+    __redu_lcd_animation_state &state,
+    T &lcd,
+    int cols,
+    int row,
+    const String &text,
+    unsigned long speed_ms,
+    bool loop) {
+  state.text = text;
+  state.row = row;
+  state.speed_ms = speed_ms;
+  state.loop = loop;
+  state.last_step = 0UL;
+  state.offset = 0;
+  state.direction = 1;
+  state.visible = text.length();
+  state.active = true;
+  state.show = false;
+  state.cycles = 0;
+  __redu_lcd_clear_row(lcd, cols, row);
+  String view = text;
+  if (view.length() > cols) {
+    view = view.substring(0, cols);
+  }
+  lcd.setCursor(0, row);
+  lcd.print(view);
+}
+
+template <typename T>
+void __redu_lcd_tick_bounce(
+    __redu_lcd_animation_state &state,
+    T &lcd,
+    int cols) {
+  if (!state.active) {
+    return;
+  }
+  unsigned long now = millis();
+  if (state.speed_ms > 0UL && state.last_step > 0UL) {
+    unsigned long elapsed = now - state.last_step;
+    if (elapsed < state.speed_ms) {
+      return;
+    }
+  }
+  state.last_step = now;
+  int length = state.text.length();
+  if (length <= 0) {
+    __redu_lcd_clear_row(lcd, cols, state.row);
+    state.active = state.loop;
+    return;
+  }
+  if (length >= cols) {
+    String view = state.text.substring(0, cols);
+    __redu_lcd_clear_row(lcd, cols, state.row);
+    lcd.setCursor(0, state.row);
+    lcd.print(view);
+    state.active = state.loop;
+    return;
+  }
+  int max_offset = cols - length;
+  if (max_offset <= 0) {
+    state.active = state.loop;
+    return;
+  }
+  state.offset += state.direction;
+  if (state.offset >= max_offset) {
+    state.offset = max_offset;
+    state.direction = -1;
+    state.show = true;
+  } else if (state.offset <= 0) {
+    state.offset = 0;
+    state.direction = 1;
+    if (state.show) {
+      state.cycles += 1;
+      state.show = false;
+      if (!state.loop && state.cycles >= 1) {
+        state.active = false;
+      }
+    }
+  }
+  __redu_lcd_clear_row(lcd, cols, state.row);
+  int available = cols - state.offset;
+  if (available < 0) {
+    available = 0;
+  }
+  lcd.setCursor(state.offset, state.row);
+  String view = state.text;
+  if (view.length() > available) {
+    view = view.substring(0, available);
+  }
+  lcd.print(view);
+}
+
+template <typename T>
+void __redu_lcd_progress(
+    T &lcd,
+    int cols,
+    int row,
+    int value,
+    int max_value,
+    int width,
+    char fill,
+    const String &label) {
+  if (cols <= 0) {
+    return;
+  }
+  if (width <= 0 || width > cols) {
+    width = cols;
+  }
+  if (max_value <= 0) {
+    max_value = 1;
+  }
+  if (value < 0) {
+    value = 0;
+  }
+  if (value > max_value) {
+    value = max_value;
+  }
+  long filled = static_cast<long>(value) * width / max_value;
+  if (filled < 0) {
+    filled = 0;
+  }
+  if (filled > width) {
+    filled = width;
+  }
+  String bar = "";
+  for (int i = 0; i < width; ++i) {
+    bar += (i < filled) ? fill : ' ';
+  }
+  String text = label.length() ? (label + " " + bar) : bar;
+  if (text.length() > cols) {
+    text = text.substring(0, cols);
+  }
+  __redu_lcd_clear_row(lcd, cols, row);
+  lcd.setCursor(0, row);
+  lcd.print(text);
+}
+"""
 SETUP_START = "void setup() {\n"
 SETUP_END = "}\n\n"
 LOOP_START = "void loop() {\n"
@@ -299,6 +790,10 @@ def _emit_block(
     button_decls: Dict[str, ButtonDecl],
     servo_decls: Dict[str, ServoDecl],
     servo_state: Dict[str, Dict[str, str]],
+    lcd_decls: Dict[str, LCDDecl],
+    lcd_state: Dict[str, Dict[str, str]],
+    lcd_animations: Dict[str, List[Tuple[str, str]]],
+    lcd_animation_counter: Dict[str, int],
     indent: str = "  ",
     *,
     in_setup: bool = False,
@@ -306,6 +801,155 @@ def _emit_block(
     ultrasonic_pin_modes: Optional[Set[Tuple[str, str, str]]] = None,
 ) -> List[str]:
     """Emit a block of statements as C++ source lines."""
+    def _ensure_buzzer_tracking(name: str) -> Tuple[str, str, str, str]:
+        pin_value = buzzer_pin.get(name, 8)
+        pin_code = _emit_expr(pin_value)
+        state_var = buzzer_state.setdefault(name, f"__buzzer_state_{name}")
+        current_var = buzzer_current.setdefault(name, f"__buzzer_current_{name}")
+        last_var = buzzer_last.setdefault(name, f"__buzzer_last_{name}")
+        return pin_code, state_var, current_var, last_var
+
+    def _ensure_led_tracking(name: str) -> Tuple[str, str, str]:
+        pin = led_pin.get(name, 13)
+        state_var = led_state.setdefault(name, f"__state_{name}")
+        brightness_var = led_brightness.setdefault(name, f"__brightness_{name}")
+        return _emit_expr(pin), state_var, brightness_var
+
+    def _ensure_rgb_tracking(
+        name: str,
+    ) -> Tuple[Tuple[str, str, str], Tuple[str, str, str], str]:
+        pins = rgb_led_pins.get(name)
+        if pins is None:
+            pins = (0, 0, 0)
+        pin_codes = tuple(_emit_expr(pin) for pin in pins)
+        state_var = rgb_led_state.setdefault(name, f"__rgb_state_{name}")
+        color_vars = rgb_led_colors.setdefault(
+            name,
+            (
+                f"__rgb_red_{name}",
+                f"__rgb_green_{name}",
+                f"__rgb_blue_{name}",
+            ),
+        )
+        return pin_codes, color_vars, state_var
+
+    def _emit_rgb_update(
+        name: str, red_expr: str, green_expr: str, blue_expr: str
+    ) -> List[str]:
+        pin_codes, color_vars, state_var = _ensure_rgb_tracking(name)
+        red_pin, green_pin, blue_pin = pin_codes
+        red_var, green_var, blue_var = color_vars
+        block_lines = [f"{indent}{{"]
+        block_lines.append(f"{indent}  int __redu_red = {red_expr};")
+        block_lines.append(f"{indent}  if (__redu_red < 0) {{ __redu_red = 0; }}")
+        block_lines.append(f"{indent}  if (__redu_red > 255) {{ __redu_red = 255; }}")
+        block_lines.append(f"{indent}  int __redu_green = {green_expr};")
+        block_lines.append(f"{indent}  if (__redu_green < 0) {{ __redu_green = 0; }}")
+        block_lines.append(f"{indent}  if (__redu_green > 255) {{ __redu_green = 255; }}")
+        block_lines.append(f"{indent}  int __redu_blue = {blue_expr};")
+        block_lines.append(f"{indent}  if (__redu_blue < 0) {{ __redu_blue = 0; }}")
+        block_lines.append(f"{indent}  if (__redu_blue > 255) {{ __redu_blue = 255; }}")
+        block_lines.append(f"{indent}  {red_var} = __redu_red;")
+        block_lines.append(f"{indent}  {green_var} = __redu_green;")
+        block_lines.append(f"{indent}  {blue_var} = __redu_blue;")
+        block_lines.append(
+            f"{indent}  {state_var} = (({red_var} > 0) || ({green_var} > 0) || ({blue_var} > 0));"
+        )
+        block_lines.append(f"{indent}  analogWrite({red_pin}, {red_var});")
+        block_lines.append(f"{indent}  analogWrite({green_pin}, {green_var});")
+        block_lines.append(f"{indent}  analogWrite({blue_pin}, {blue_var});")
+        block_lines.append(f"{indent}}}")
+        return block_lines
+
+    _LCD_ALIGN_MAP = {
+        "left": "__redu_lcd_align_left",
+        "center": "__redu_lcd_align_center",
+        "right": "__redu_lcd_align_right",
+    }
+
+    def _register_lcd(node: LCDDecl) -> Dict[str, str]:
+        lcd_decls[node.name] = node
+        info = lcd_state.get(node.name)
+        if info is not None:
+            return info
+        object_name = f"__redu_lcd_{node.name}"
+        cols_var = f"__redu_lcd_cols_{node.name}"
+        rows_var = f"__redu_lcd_rows_{node.name}"
+        info = {
+            "object": object_name,
+            "cols_var": cols_var,
+            "rows_var": rows_var,
+            "cols_expr": _emit_expr(node.cols),
+            "rows_expr": _emit_expr(node.rows),
+            "interface": node.interface,
+            "glyph_counter": 0,
+        }
+        if node.interface == "i2c":
+            i2c_value = node.i2c_addr if node.i2c_addr is not None else 0
+            info["i2c_addr"] = _emit_expr(i2c_value)
+        else:
+            info["pins"] = {
+                "rs": _emit_expr(node.rs if node.rs is not None else 0),
+                "en": _emit_expr(node.en if node.en is not None else 0),
+                "d4": _emit_expr(node.d4 if node.d4 is not None else 0),
+                "d5": _emit_expr(node.d5 if node.d5 is not None else 0),
+                "d6": _emit_expr(node.d6 if node.d6 is not None else 0),
+                "d7": _emit_expr(node.d7 if node.d7 is not None else 0),
+                "rw": _emit_expr(node.rw) if node.rw is not None else None,
+            }
+        if node.backlight_pin is not None:
+            info["backlight_pin"] = _emit_expr(node.backlight_pin)
+            info["brightness_var"] = f"__redu_lcd_brightness_{node.name}"
+            info["backlight_state_var"] = f"__redu_lcd_backlight_state_{node.name}"
+        lcd_state[node.name] = info
+        lcd_animations.setdefault(node.name, [])
+        return info
+
+    def _ensure_lcd(name: str) -> Optional[Dict[str, str]]:
+        info = lcd_state.get(name)
+        if info is None:
+            decl = lcd_decls.get(name)
+            if isinstance(decl, LCDDecl):
+                info = _register_lcd(decl)
+        return info
+
+    def _bool_expr(value: Union[bool, str]) -> str:
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        return _emit_expr(value)
+
+    def _string_expr(value: str) -> str:
+        expr = _emit_expr(value)
+        return f"String({expr})"
+
+    def _align_enum(label: str) -> str:
+        return _LCD_ALIGN_MAP.get(label, "__redu_lcd_align_left")
+
+    def _ensure_servo_tracking(
+        name: str,
+    ) -> Tuple[str, str, str, str, str, str, str]:
+        info = servo_state.setdefault(
+            name,
+            {
+                "object": f"__servo_{name}",
+                "min_angle": f"__servo_min_angle_{name}",
+                "max_angle": f"__servo_max_angle_{name}",
+                "min_pulse": f"__servo_min_pulse_{name}",
+                "max_pulse": f"__servo_max_pulse_{name}",
+                "angle": f"__servo_angle_{name}",
+                "pulse": f"__servo_pulse_{name}",
+            },
+        )
+        return (
+            info["object"],
+            info["min_angle"],
+            info["max_angle"],
+            info["min_pulse"],
+            info["max_pulse"],
+            info["angle"],
+            info["pulse"],
+        )
+
     lines: List[str] = []
     for node in nodes:
         if type(node).__name__ == "Repeat":
@@ -330,6 +974,10 @@ def _emit_block(
                     button_decls,
                     servo_decls,
                     servo_state,
+                    lcd_decls,
+                    lcd_state,
+                    lcd_animations,
+                    lcd_animation_counter,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
@@ -369,6 +1017,10 @@ def _emit_block(
             potentiometer_decls[node.name] = node
             continue
 
+        if isinstance(node, LCDDecl):
+            _register_lcd(node)
+            continue
+
         if isinstance(node, IfStatement):
             for idx, branch in enumerate(node.branches):
                 keyword = "if" if idx == 0 else "else if"
@@ -391,6 +1043,10 @@ def _emit_block(
                     button_decls,
                     servo_decls,
                     servo_state,
+                    lcd_decls,
+                    lcd_state,
+                    lcd_animations,
+                    lcd_animation_counter,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
@@ -418,6 +1074,10 @@ def _emit_block(
                         button_decls,
                         servo_decls,
                         servo_state,
+                        lcd_decls,
+                        lcd_state,
+                        lcd_animations,
+                        lcd_animation_counter,
                         indent + "  ",
                         in_setup=in_setup,
                         emitted_pin_modes=emitted_pin_modes,
@@ -447,6 +1107,10 @@ def _emit_block(
                     button_decls,
                     servo_decls,
                     servo_state,
+                    lcd_decls,
+                    lcd_state,
+                    lcd_animations,
+                    lcd_animation_counter,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
@@ -457,8 +1121,9 @@ def _emit_block(
             continue
 
         if isinstance(node, ForRangeLoop):
+            limit_expr = _emit_expr(node.count)
             lines.append(
-                f"{indent}for (int {node.var_name} = 0; {node.var_name} < {node.count}; ++{node.var_name}) {{"
+                f"{indent}for (int {node.var_name} = 0; {node.var_name} < {limit_expr}; ++{node.var_name}) {{"
             )
             lines.extend(
                 _emit_block(
@@ -478,6 +1143,10 @@ def _emit_block(
                     button_decls,
                     servo_decls,
                     servo_state,
+                    lcd_decls,
+                    lcd_state,
+                    lcd_animations,
+                    lcd_animation_counter,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
@@ -507,6 +1176,10 @@ def _emit_block(
                     button_decls,
                     servo_decls,
                     servo_state,
+                    lcd_decls,
+                    lcd_state,
+                    lcd_animations,
+                    lcd_animation_counter,
                     indent + "  ",
                     in_setup=in_setup,
                     emitted_pin_modes=emitted_pin_modes,
@@ -543,6 +1216,10 @@ def _emit_block(
                         button_decls,
                         servo_decls,
                         servo_state,
+                        lcd_decls,
+                        lcd_state,
+                        lcd_animations,
+                        lcd_animation_counter,
                         indent + "  ",
                         in_setup=in_setup,
                         emitted_pin_modes=emitted_pin_modes,
@@ -559,6 +1236,215 @@ def _emit_block(
         if isinstance(node, SerialWrite):
             method = "println" if getattr(node, "newline", True) else "print"
             lines.append(f"{indent}Serial.{method}({node.value});")
+            continue
+
+        if isinstance(node, LCDWrite):
+            info = _ensure_lcd(node.name)
+            if info is None:
+                continue
+            col_expr = _emit_expr(node.col)
+            row_expr = _emit_expr(node.row)
+            text_expr = _string_expr(node.text)
+            clear_expr = _bool_expr(node.clear_row)
+            lines.append(
+                f"{indent}__redu_lcd_write_aligned({info['object']}, {info['cols_var']}, static_cast<int>({col_expr}), static_cast<int>({row_expr}), {text_expr}, {clear_expr}, {_align_enum(node.align)});"
+            )
+            continue
+
+        if isinstance(node, LCDLine):
+            info = _ensure_lcd(node.name)
+            if info is None:
+                continue
+            row_expr = _emit_expr(node.row)
+            text_expr = _string_expr(node.text)
+            clear_expr = _bool_expr(node.clear_row)
+            lines.append(
+                f"{indent}__redu_lcd_write_aligned({info['object']}, {info['cols_var']}, 0, static_cast<int>({row_expr}), {text_expr}, {clear_expr}, {_align_enum(node.align)});"
+            )
+            continue
+
+        if isinstance(node, LCDMessage):
+            info = _ensure_lcd(node.name)
+            if info is None:
+                continue
+            clear_expr = _bool_expr(node.clear_rows)
+            if node.top is not None:
+                lines.append(
+                    f"{indent}__redu_lcd_write_aligned({info['object']}, {info['cols_var']}, 0, 0, {_string_expr(node.top)}, {clear_expr}, {_align_enum(node.top_align)});"
+                )
+            if node.bottom is not None:
+                lines.append(
+                    f"{indent}__redu_lcd_write_aligned({info['object']}, {info['cols_var']}, 0, 1, {_string_expr(node.bottom)}, {clear_expr}, {_align_enum(node.bottom_align)});"
+                )
+            continue
+
+        if isinstance(node, LCDClear):
+            info = _ensure_lcd(node.name)
+            if info is None:
+                continue
+            lines.append(f"{indent}{info['object']}.clear();")
+            continue
+
+        if isinstance(node, LCDDisplay):
+            info = _ensure_lcd(node.name)
+            if info is None:
+                continue
+            interface = info.get("interface")
+            backlight_pin = info.get("backlight_pin")
+            brightness_var = info.get("brightness_var")
+            state_var = info.get("backlight_state_var")
+            if isinstance(node.on, bool):
+                if node.on:
+                    lines.append(f"{indent}{info['object']}.display();")
+                    if interface == "i2c":
+                        lines.append(f"{indent}{info['object']}.backlight();")
+                    elif backlight_pin and brightness_var and state_var:
+                        lines.append(f"{indent}{state_var} = true;")
+                        lines.append(f"{indent}analogWrite({backlight_pin}, {brightness_var});")
+                else:
+                    lines.append(f"{indent}{info['object']}.noDisplay();")
+                    if interface == "i2c":
+                        lines.append(f"{indent}{info['object']}.noBacklight();")
+                    elif backlight_pin and brightness_var and state_var:
+                        lines.append(f"{indent}{state_var} = false;")
+                        lines.append(f"{indent}analogWrite({backlight_pin}, 0);")
+            else:
+                on_expr = _bool_expr(node.on)
+                lines.append(f"{indent}if ({on_expr}) {{")
+                lines.append(f"{indent}  {info['object']}.display();")
+                if interface == "i2c":
+                    lines.append(f"{indent}  {info['object']}.backlight();")
+                elif backlight_pin and brightness_var and state_var:
+                    lines.append(f"{indent}  {state_var} = true;")
+                    lines.append(f"{indent}  analogWrite({backlight_pin}, {brightness_var});")
+                lines.append(f"{indent}}} else {{")
+                lines.append(f"{indent}  {info['object']}.noDisplay();")
+                if interface == "i2c":
+                    lines.append(f"{indent}  {info['object']}.noBacklight();")
+                elif backlight_pin and brightness_var and state_var:
+                    lines.append(f"{indent}  {state_var} = false;")
+                    lines.append(f"{indent}  analogWrite({backlight_pin}, 0);")
+                lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, LCDBacklight):
+            info = _ensure_lcd(node.name)
+            if info is None:
+                continue
+            if info.get("interface") == "i2c":
+                if isinstance(node.on, bool):
+                    method = "backlight" if node.on else "noBacklight"
+                    lines.append(f"{indent}{info['object']}.{method}();")
+                else:
+                    on_expr = _bool_expr(node.on)
+                    lines.append(f"{indent}if ({on_expr}) {{")
+                    lines.append(f"{indent}  {info['object']}.backlight();")
+                    lines.append(f"{indent}}} else {{")
+                    lines.append(f"{indent}  {info['object']}.noBacklight();")
+                    lines.append(f"{indent}}}")
+            else:
+                pin_expr = info.get("backlight_pin")
+                brightness_var = info.get("brightness_var")
+                state_var = info.get("backlight_state_var")
+                if pin_expr and brightness_var and state_var:
+                    on_expr = _bool_expr(node.on)
+                    lines.append(f"{indent}if ({on_expr}) {{")
+                    lines.append(f"{indent}  {state_var} = true;")
+                    lines.append(f"{indent}  analogWrite({pin_expr}, {brightness_var});")
+                    lines.append(f"{indent}}} else {{")
+                    lines.append(f"{indent}  {state_var} = false;")
+                    lines.append(f"{indent}  analogWrite({pin_expr}, 0);")
+                    lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, LCDBrightness):
+            info = _ensure_lcd(node.name)
+            if info is None:
+                continue
+            pin_expr = info.get("backlight_pin")
+            brightness_var = info.get("brightness_var")
+            state_var = info.get("backlight_state_var")
+            if pin_expr and brightness_var and state_var:
+                level_expr = _emit_expr(node.level)
+                lines.append(f"{indent}{brightness_var} = static_cast<int>({level_expr});")
+                lines.append(f"{indent}if ({brightness_var} < 0) {{ {brightness_var} = 0; }}")
+                lines.append(f"{indent}if ({brightness_var} > 255) {{ {brightness_var} = 255; }}")
+                lines.append(f"{indent}if ({state_var}) {{ analogWrite({pin_expr}, {brightness_var}); }}")
+            continue
+
+        if isinstance(node, LCDGlyph):
+            info = _ensure_lcd(node.name)
+            if info is None:
+                continue
+            counter = info.get("glyph_counter", 0) + 1
+            info["glyph_counter"] = counter
+            array_name = f"__redu_lcd_glyph_{node.name}_{counter}"
+            bitmap_values = ", ".join(str(value & 0x1F) for value in node.bitmap)
+            lines.append(f"{indent}uint8_t {array_name}[8] = {{{bitmap_values}}};")
+            lines.append(
+                f"{indent}{info['object']}.createChar(static_cast<uint8_t>({_emit_expr(node.slot)}), {array_name});"
+            )
+            continue
+
+        if isinstance(node, LCDProgress):
+            info = _ensure_lcd(node.name)
+            if info is None:
+                continue
+            try:
+                fill_expr = _LCD_PROGRESS_STYLES[node.style]
+            except KeyError as exc:
+                allowed = ", ".join(sorted(_LCD_PROGRESS_STYLES))
+                raise ValueError(
+                    f"unsupported LCD progress style: {node.style!r} (choose from {allowed})"
+                ) from exc
+            row_expr = _emit_expr(node.row)
+            value_expr = _emit_expr(node.value)
+            max_expr = _emit_expr(node.max_value)
+            if node.width is None:
+                width_expr = info["cols_var"]
+            else:
+                width_expr = f"static_cast<int>({_emit_expr(node.width)})"
+            label_expr = _string_expr(node.label) if node.label is not None else "String(\"\")"
+            lines.append(
+                f"{indent}__redu_lcd_progress({info['object']}, {info['cols_var']}, static_cast<int>({row_expr}), static_cast<int>({value_expr}), static_cast<int>({max_expr}), {width_expr}, {fill_expr}, {label_expr});"
+            )
+            continue
+
+        if isinstance(node, LCDAnimate):
+            info = _ensure_lcd(node.name)
+            if info is None:
+                continue
+            try:
+                start_func = _LCD_ANIMATION_START_FUNCS[node.animation]
+                tick_kind = node.animation
+            except KeyError as exc:
+                allowed = ", ".join(sorted(_LCD_ANIMATION_START_FUNCS))
+                raise ValueError(
+                    f"unsupported LCD animation: {node.animation!r} (choose from {allowed})"
+                ) from exc
+            counter = lcd_animation_counter.get(node.name, 0)
+            var_name = f"__redu_lcd_anim_{node.name}_{counter}"
+            lcd_animation_counter[node.name] = counter + 1
+            anim_list = lcd_animations.setdefault(node.name, [])
+            anim_list.append((var_name, tick_kind))
+            speed_expr = _emit_expr(node.speed_ms)
+            row_expr = _emit_expr(node.row)
+            lines.append(
+                f"{indent}{start_func}({var_name}, {info['object']}, {info['cols_var']}, static_cast<int>({row_expr}), {_string_expr(node.text)}, static_cast<unsigned long>({speed_expr}), {_bool_expr(node.loop)});"
+            )
+            continue
+
+        if isinstance(node, LCDTick):
+            info = _ensure_lcd(node.name)
+            if info is None:
+                continue
+            for anim_var, anim_kind in lcd_animations.get(node.name, []):
+                tick_func = _LCD_ANIMATION_TICK_FUNCS.get(anim_kind)
+                if tick_func is None:
+                    continue
+                lines.append(
+                    f"{indent}{tick_func}({anim_var}, {info['object']}, {info['cols_var']});"
+                )
             continue
 
         if isinstance(node, VarDecl):
@@ -615,57 +1501,6 @@ def _emit_block(
                 ),
             )
             return pin_codes, color_vars, state_var
-
-        def _emit_rgb_update(name: str, red_expr: str, green_expr: str, blue_expr: str) -> List[str]:
-            pin_codes, color_vars, state_var = _ensure_rgb_tracking(name)
-            red_pin, green_pin, blue_pin = pin_codes
-            red_var, green_var, blue_var = color_vars
-            block_lines = [f"{indent}{{"]
-            block_lines.append(f"{indent}  int __redu_red = {red_expr};")
-            block_lines.append(f"{indent}  if (__redu_red < 0) {{ __redu_red = 0; }}")
-            block_lines.append(f"{indent}  if (__redu_red > 255) {{ __redu_red = 255; }}")
-            block_lines.append(f"{indent}  int __redu_green = {green_expr};")
-            block_lines.append(f"{indent}  if (__redu_green < 0) {{ __redu_green = 0; }}")
-            block_lines.append(f"{indent}  if (__redu_green > 255) {{ __redu_green = 255; }}")
-            block_lines.append(f"{indent}  int __redu_blue = {blue_expr};")
-            block_lines.append(f"{indent}  if (__redu_blue < 0) {{ __redu_blue = 0; }}")
-            block_lines.append(f"{indent}  if (__redu_blue > 255) {{ __redu_blue = 255; }}")
-            block_lines.append(f"{indent}  {red_var} = __redu_red;")
-            block_lines.append(f"{indent}  {green_var} = __redu_green;")
-            block_lines.append(f"{indent}  {blue_var} = __redu_blue;")
-            block_lines.append(
-                f"{indent}  {state_var} = (({red_var} > 0) || ({green_var} > 0) || ({blue_var} > 0));"
-            )
-            block_lines.append(f"{indent}  analogWrite({red_pin}, {red_var});")
-            block_lines.append(f"{indent}  analogWrite({green_pin}, {green_var});")
-            block_lines.append(f"{indent}  analogWrite({blue_pin}, {blue_var});")
-            block_lines.append(f"{indent}}}")
-            return block_lines
-
-        def _ensure_servo_tracking(
-            name: str,
-        ) -> Tuple[str, str, str, str, str, str, str]:
-            info = servo_state.setdefault(
-                name,
-                {
-                    "object": f"__servo_{name}",
-                    "min_angle": f"__servo_min_angle_{name}",
-                    "max_angle": f"__servo_max_angle_{name}",
-                    "min_pulse": f"__servo_min_pulse_{name}",
-                    "max_pulse": f"__servo_max_pulse_{name}",
-                    "angle": f"__servo_angle_{name}",
-                    "pulse": f"__servo_pulse_{name}",
-                },
-            )
-            return (
-                info["object"],
-                info["min_angle"],
-                info["max_angle"],
-                info["min_pulse"],
-                info["max_pulse"],
-                info["angle"],
-                info["pulse"],
-            )
 
         if isinstance(node, LedDecl):
             led_pin[node.name] = node.pin
@@ -1331,6 +2166,13 @@ def emit(ast: Program) -> str:
     servo_state: Dict[str, Dict[str, str]] = {}
     servo_attach_emitted: Set[str] = set()
     servo_used = False
+    lcd_decls: Dict[str, LCDDecl] = {}
+    lcd_state: Dict[str, Dict[str, str]] = {}
+    lcd_animations: Dict[str, List[Tuple[str, str]]] = {}
+    lcd_animation_counter: Dict[str, int] = {}
+    lcd_parallel_used = False
+    lcd_i2c_used = False
+    lcd_init_emitted: Set[str] = set()
     helpers = getattr(ast, "helpers", set())
     ultrasonic_measurements = getattr(ast, "ultrasonic_measurements", set())
 
@@ -1410,6 +2252,85 @@ def emit(ast: Program) -> str:
             globals_.append(pulse_line)
         return info
 
+    def _ensure_lcd_globals(node: LCDDecl) -> Dict[str, str]:
+        nonlocal lcd_parallel_used, lcd_i2c_used
+        info = lcd_state.get(node.name)
+        if info is not None:
+            return info
+        object_name = f"__redu_lcd_{node.name}"
+        cols_var = f"__redu_lcd_cols_{node.name}"
+        rows_var = f"__redu_lcd_rows_{node.name}"
+        cols_expr = _emit_expr(node.cols)
+        rows_expr = _emit_expr(node.rows)
+        info = {
+            "object": object_name,
+            "cols_var": cols_var,
+            "rows_var": rows_var,
+            "cols_expr": cols_expr,
+            "rows_expr": rows_expr,
+            "interface": node.interface,
+            "glyph_counter": 0,
+        }
+        if node.interface == "i2c":
+            addr_expr = _emit_expr(node.i2c_addr if node.i2c_addr is not None else 0)
+            info["i2c_addr"] = addr_expr
+            obj_line = (
+                f"LiquidCrystal_I2C {object_name}({addr_expr}, static_cast<int>({cols_expr}), "
+                f"static_cast<int>({rows_expr}));"
+            )
+            lcd_i2c_used = True
+        else:
+            rs_expr = _emit_expr(node.rs if node.rs is not None else 0)
+            en_expr = _emit_expr(node.en if node.en is not None else 0)
+            d4_expr = _emit_expr(node.d4 if node.d4 is not None else 0)
+            d5_expr = _emit_expr(node.d5 if node.d5 is not None else 0)
+            d6_expr = _emit_expr(node.d6 if node.d6 is not None else 0)
+            d7_expr = _emit_expr(node.d7 if node.d7 is not None else 0)
+            info["pins"] = {
+                "rs": rs_expr,
+                "en": en_expr,
+                "d4": d4_expr,
+                "d5": d5_expr,
+                "d6": d6_expr,
+                "d7": d7_expr,
+                "rw": _emit_expr(node.rw) if node.rw is not None else None,
+            }
+            if node.rw is not None:
+                rw_expr = info["pins"]["rw"]
+                obj_line = (
+                    f"LiquidCrystal {object_name}({rs_expr}, {rw_expr}, {en_expr}, {d4_expr}, {d5_expr}, {d6_expr}, {d7_expr});"
+                )
+            else:
+                obj_line = (
+                    f"LiquidCrystal {object_name}({rs_expr}, {en_expr}, {d4_expr}, {d5_expr}, {d6_expr}, {d7_expr});"
+                )
+            lcd_parallel_used = True
+        if obj_line not in globals_:
+            globals_.append(obj_line)
+        cols_line = f"const int {cols_var} = static_cast<int>({cols_expr});"
+        rows_line = f"const int {rows_var} = static_cast<int>({rows_expr});"
+        if cols_line not in globals_:
+            globals_.append(cols_line)
+        if rows_line not in globals_:
+            globals_.append(rows_line)
+        if node.backlight_pin is not None:
+            backlight_expr = _emit_expr(node.backlight_pin)
+            info["backlight_pin"] = backlight_expr
+            brightness_var = f"__redu_lcd_brightness_{node.name}"
+            state_var = f"__redu_lcd_backlight_state_{node.name}"
+            info["brightness_var"] = brightness_var
+            info["backlight_state_var"] = state_var
+            bright_line = f"int {brightness_var} = 255;"
+            state_line = f"bool {state_var} = true;"
+            if bright_line not in globals_:
+                globals_.append(bright_line)
+            if state_line not in globals_:
+                globals_.append(state_line)
+        lcd_state[node.name] = info
+        lcd_decls[node.name] = node
+        lcd_animations.setdefault(node.name, [])
+        return info
+
     for node in (setup_body or []):
         if isinstance(node, ButtonDecl):
             button_decls[node.name] = node
@@ -1447,6 +2368,52 @@ def emit(ast: Program) -> str:
                 setup_lines.append(
                     f"  {info['object']}.writeMicroseconds(static_cast<int>({min_pulse_expr}));"
                 )
+            continue
+
+        if isinstance(node, LCDDecl):
+            info = _ensure_lcd_globals(node)
+            if node.name not in lcd_init_emitted:
+                if info.get("interface") == "i2c":
+                    setup_lines.append(f"  {info['object']}.init();")
+                    setup_lines.append(f"  {info['object']}.backlight();")
+                else:
+                    setup_lines.append(
+                        f"  {info['object']}.begin({info['cols_var']}, {info['rows_var']});"
+                    )
+                    if info.get("backlight_pin"):
+                        setup_lines.append(
+                            f"  pinMode({info['backlight_pin']}, OUTPUT);"
+                        )
+                        brightness_var = info.get("brightness_var")
+                        if brightness_var:
+                            setup_lines.append(
+                                f"  analogWrite({info['backlight_pin']}, {brightness_var});"
+                            )
+                setup_lines.append(f"  {info['object']}.clear();")
+                lcd_init_emitted.add(node.name)
+            continue
+
+        if isinstance(node, LCDDecl):
+            info = _ensure_lcd_globals(node)
+            if node.name not in lcd_init_emitted:
+                if info.get("interface") == "i2c":
+                    setup_lines.append(f"  {info['object']}.init();")
+                    setup_lines.append(f"  {info['object']}.backlight();")
+                else:
+                    setup_lines.append(
+                        f"  {info['object']}.begin({info['cols_var']}, {info['rows_var']});"
+                    )
+                    if info.get("backlight_pin"):
+                        setup_lines.append(
+                            f"  pinMode({info['backlight_pin']}, OUTPUT);"
+                        )
+                        brightness_var = info.get("brightness_var")
+                        if brightness_var:
+                            setup_lines.append(
+                                f"  analogWrite({info['backlight_pin']}, {brightness_var});"
+                            )
+                setup_lines.append(f"  {info['object']}.clear();")
+                lcd_init_emitted.add(node.name)
             continue
 
         if isinstance(node, LedDecl):
@@ -1634,6 +2601,10 @@ def emit(ast: Program) -> str:
             button_decls,
             servo_decls,
             servo_state,
+            lcd_decls,
+            lcd_state,
+            lcd_animations,
+            lcd_animation_counter,
             in_setup=True,
             emitted_pin_modes=pin_mode_emitted,
             ultrasonic_pin_modes=ultrasonic_pin_modes,
@@ -1662,6 +2633,10 @@ def emit(ast: Program) -> str:
                     button_decls,
                     servo_decls,
                     servo_state,
+                    lcd_decls,
+                    lcd_state,
+                    lcd_animations,
+                    lcd_animation_counter,
                     in_setup=False,
                     emitted_pin_modes=pin_mode_emitted,
                     ultrasonic_pin_modes=ultrasonic_pin_modes,
@@ -1687,11 +2662,22 @@ def emit(ast: Program) -> str:
             button_decls,
             servo_decls,
             servo_state,
+            lcd_decls,
+            lcd_state,
+            lcd_animations,
+            lcd_animation_counter,
             in_setup=False,
             emitted_pin_modes=pin_mode_emitted,
             ultrasonic_pin_modes=ultrasonic_pin_modes,
         )
     )
+
+    if lcd_state:
+        for name, vars in lcd_animations.items():
+            for var, _ in vars:
+                line = f"__redu_lcd_animation_state {var};"
+                if line not in globals_:
+                    globals_.append(line)
 
     function_sections: List[str] = []
     for fn in getattr(ast, "functions", []):
@@ -1714,6 +2700,10 @@ def emit(ast: Program) -> str:
             button_decls,
             servo_decls,
             servo_state,
+            dict(lcd_decls),
+            {name: dict(info) for name, info in lcd_state.items()},
+            {name: [(var, kind) for var, kind in values] for name, values in lcd_animations.items()},
+            dict(lcd_animation_counter),
             indent="  ",
             in_setup=False,
             emitted_pin_modes=set(),
@@ -1774,6 +2764,12 @@ def emit(ast: Program) -> str:
     parts: List[str] = [HEADER]
     if servo_used:
         parts.append("#include <Servo.h>\n\n")
+    if lcd_parallel_used:
+        parts.append("#include <LiquidCrystal.h>\n\n")
+    if lcd_i2c_used:
+        parts.append("#include <Wire.h>\n#include <LiquidCrystal_I2C.h>\n\n")
+    if lcd_state:
+        parts.append(LCD_HELPER_SNIPPET + "\n")
     if "list" in helpers:
         parts.append(LIST_HELPER_SNIPPET + "\n")
     if "len" in helpers:

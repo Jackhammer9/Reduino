@@ -11,6 +11,18 @@ from Reduino.transpile.ast import (
     BuzzerPlayTone,
     BuzzerStop,
     BuzzerSweep,
+    LCDAnimate,
+    LCDBacklight,
+    LCDBrightness,
+    LCDClear,
+    LCDDecl,
+    LCDDisplay,
+    LCDGlyph,
+    LCDLine,
+    LCDMessage,
+    LCDProgress,
+    LCDTick,
+    LCDWrite,
     BreakStmt,
     ButtonDecl,
     ButtonPoll,
@@ -184,6 +196,23 @@ def test_parser_for_range_creates_loop_node(src) -> None:
     assert any(isinstance(stmt, LedToggle) for stmt in loop.body)
 
 
+def test_parser_for_range_accepts_expression_count(src) -> None:
+    code = src(
+        """
+        value = 5
+        for index in range(value + 2):
+            value = value
+        """
+    )
+
+    program = _parse(code)
+    loops = [node for node in program.setup_body if isinstance(node, ForRangeLoop)]
+    assert len(loops) == 1
+    loop = loops[0]
+    assert loop.var_name == "index"
+    assert loop.count == "(value + 2)"
+
+
 def test_parser_break_handling(src) -> None:
     code = src(
         """
@@ -265,6 +294,103 @@ def test_parser_serial_monitor(src) -> None:
     writes = [node for node in program.setup_body if isinstance(node, SerialWrite)]
     assert len(writes) == 1
     assert writes[0].value == '"hello"'
+
+
+def test_parser_lcd_support(src) -> None:
+    code = src(
+        """
+        from Reduino.Displays import LCD
+
+        parallel = LCD(rs=12, en=11, d4=5, d5=4, d6=3, d7=2, cols=20, rows=4, backlight_pin=9)
+        backpack = LCD(i2c_addr=0x27, cols=16, rows=2)
+
+        parallel.write(0, 0, "Hello", align="center")
+        parallel.line(1, "World", clear_row=False, align="right")
+        parallel.message("Top", bottom="Bottom", clear_rows=False)
+        parallel.clear()
+        parallel.display(False)
+        parallel.backlight(True)
+        parallel.brightness(128)
+        parallel.glyph(0, [0, 1, 2, 3, 4, 5, 6, 7])
+        parallel.progress(1, 50, max_value=100, width=10, style="hash", label="Load")
+        parallel.animate("scroll", 0, "Demo", speed_ms=250, loop=True)
+        backpack.write(1, 1, "Hi")
+        """
+    )
+
+    program = _parse(code)
+    lcd_decls = [node for node in program.setup_body if isinstance(node, LCDDecl)]
+    assert len(lcd_decls) == 2
+    assert any(node.interface == "parallel" for node in lcd_decls)
+    assert any(node.interface == "i2c" for node in lcd_decls)
+
+    lcd_nodes = [node for node in program.setup_body if node.__class__.__name__.startswith("LCD")]
+    assert any(isinstance(node, LCDWrite) for node in lcd_nodes)
+    assert any(isinstance(node, LCDLine) for node in lcd_nodes)
+    assert any(isinstance(node, LCDMessage) for node in lcd_nodes)
+    assert any(isinstance(node, LCDClear) for node in lcd_nodes)
+    assert any(isinstance(node, LCDDisplay) for node in lcd_nodes)
+    assert any(isinstance(node, LCDBacklight) for node in lcd_nodes)
+    assert any(isinstance(node, LCDBrightness) for node in lcd_nodes)
+    assert any(isinstance(node, LCDGlyph) for node in lcd_nodes)
+    progress_nodes = [node for node in lcd_nodes if isinstance(node, LCDProgress)]
+    assert progress_nodes
+    assert progress_nodes[0].style == "hash"
+    assert any(isinstance(node, LCDAnimate) for node in lcd_nodes)
+
+    assert any(isinstance(node, LCDTick) for node in program.loop_body)
+
+
+def test_parser_lcd_animation_variants(src) -> None:
+    code = src(
+        """
+        from Reduino.Displays import LCD
+
+        panel = LCD(i2c_addr=0x27, cols=16, rows=2)
+        panel.animate("blink", 0, "Blink", loop=True)
+        panel.animate("typewriter", 1, "Type", speed_ms=150)
+        panel.animate("bounce", 0, "Go", speed_ms=100)
+        """
+    )
+
+    program = _parse(code)
+    animations = [node for node in program.setup_body if isinstance(node, LCDAnimate)]
+    assert {node.animation for node in animations} == {"blink", "typewriter", "bounce"}
+    assert any(isinstance(node, LCDTick) for node in program.loop_body)
+
+    with pytest.raises(ValueError):
+        _parse(
+            src(
+                """
+                from Reduino.Displays import LCD
+
+                panel = LCD(i2c_addr=0x27, cols=16, rows=2)
+                panel.animate("spiral", 0, "Nope")
+                """
+            )
+        )
+
+
+def test_parser_lcd_animation_keyword_args(src) -> None:
+    program = _parse(
+        src(
+            """
+            from Reduino.Displays import LCD
+
+            lcd = LCD(rs=12, en=11, d4=5, d5=4, d6=3, d7=2)
+            lcd.animate(animation="bounce", row=0, text="Hello", speed_ms=150, loop=True)
+            """
+        )
+    )
+
+    animations = [node for node in program.setup_body if isinstance(node, LCDAnimate)]
+    assert len(animations) == 1
+    animation = animations[0]
+    assert animation.animation == "bounce"
+    assert animation.row == "0"
+    assert animation.text == '"Hello"'
+    assert animation.speed_ms == 150
+    assert animation.loop is True
 
 
 def test_parser_rgb_led_nodes(src) -> None:

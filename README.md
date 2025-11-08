@@ -52,6 +52,8 @@
     * [RGB LED](#rgb-led)
     * [Buzzer](#buzzer)
     * [Servo](#servo)
+  * [Displays](#displays)
+    * [LCD](#lcd)
   * [Sensors](#sensors)
     * [Button](#button)
     * [Potentiometer](#potentiometer)
@@ -264,6 +266,60 @@ s = Servo(9)
 s.write(90)
 sleep(500)
 s.write(0)
+```
+
+---
+
+### Displays
+
+#### LCD
+
+| Method | Description |
+| ------ | ----------- |
+| `LCD(rs, en, d4, d5, d6, d7, cols=16, rows=2, rw=None, backlight_pin=None)` | 4-bit parallel wiring with optional RW and PWM backlight pin. Constructor automatically calls `begin()` and clears the display. |
+| `LCD(i2c_addr, cols=16, rows=2)` | PCF8574-style I²C backpack wiring. Constructor calls `init()`/`backlight()` for you. |
+| `write(col, row, text, clear_row=True, align="left")` | Position text anywhere; optional row clearing and alignment (`"left"`, `"center"`, `"right"`). |
+| `line(row, text, align="left", clear_row=True)` | Replace an entire row with aligned text. |
+| `message(top=None, bottom=None, top_align="left", bottom_align="left", clear_rows=True)` | Convenience helper for two-line messages. |
+| `clear()` / `display(on)` / `backlight(on)` | Clear the screen and toggle the LCD/backlight power. |
+| `brightness(level)` | Set PWM backlight brightness (parallel mode with `backlight_pin`). |
+| `glyph(slot, bitmap)` | Upload a custom 5×8 glyph (`bitmap` = 8 integers). |
+| `progress(row, value, max_value=100, width=None, label=None, style="block")` | Render a progress bar (`style` = `"block"`, `"hash"`, `"pipe"`, or `"dot"`). |
+| `animate(style, row, text, speed_ms=200, loop=False)` | Start a non-blocking animation (`style` = `"scroll"`, `"blink"`, `"typewriter"`, or `"bounce"`); the transpiler injects the required loop `tick()`. |
+
+> [!NOTE]
+> `brightness()` is available only when a parallel display is created with `backlight_pin`. All alignment parameters accept `"left"`, `"center"`, or `"right"` (case-insensitive).
+
+Available animation styles:
+
+* `scroll` – marquee-style horizontal scrolling.
+* `blink` – toggles the text on and off without blocking.
+* `typewriter` – reveals the message one character at a time.
+* `bounce` – slides the text from edge to edge before reversing.
+
+**Parallel wiring example (PWM backlight + progress bar)**
+
+```python
+from Reduino import target
+target("COM3")
+
+from Reduino.Displays import LCD
+
+lcd = LCD(rs=12, en=11, d4=5, d5=4, d6=3, d7=2, backlight_pin=9)
+lcd.message("Setup complete", bottom="Waiting…", top_align="center")
+lcd.progress(1, 30, max_value=100, width=12, label="Load")
+lcd.brightness(200)
+```
+
+**I²C backpack example (custom glyph + marquee animation)**
+
+```python
+from Reduino.Displays import LCD
+
+panel = LCD(i2c_addr=0x27, cols=20, rows=4)
+panel.glyph(0, [0, 2, 5, 8, 8, 5, 2, 0])
+panel.line(0, "Ready to scroll", align="center")
+panel.animate("scroll", 2, "This text scrolls without blocking!", speed_ms=150, loop=True)
 ```
 
 ---

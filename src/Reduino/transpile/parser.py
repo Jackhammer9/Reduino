@@ -22,6 +22,18 @@ from .ast import (
     BuzzerPlayTone,
     BuzzerStop,
     BuzzerSweep,
+    LCDAnimate,
+    LCDBacklight,
+    LCDBrightness,
+    LCDClear,
+    LCDDecl,
+    LCDDisplay,
+    LCDGlyph,
+    LCDLine,
+    LCDMessage,
+    LCDProgress,
+    LCDTick,
+    LCDWrite,
     IfStatement,
     LedBlink,
     LedDecl,
@@ -1227,6 +1239,7 @@ RE_IMPORT_SERIAL  = re.compile(r"^\s*from\s+Reduino\.Communication\s+import\s+Se
 RE_IMPORT_TARGET  = re.compile(r"^\s*from\s+Reduino\s+import\s+target\s*$")
 RE_IMPORT_ULTRASONIC = re.compile(r"^\s*from\s+Reduino\.Sensors\s+import\s+Ultrasonic\s*$")
 RE_IMPORT_BUTTON  = re.compile(r"^\s*from\s+Reduino\.Sensors\s+import\s+Button\s*$")
+RE_IMPORT_LCD     = re.compile(r"^\s*from\s+Reduino\.Displays\s+import\s+LCD\s*$")
 RE_IMPORT_POTENTIOMETER = re.compile(
     r"^\s*from\s+Reduino\.Sensors\s+import\s+Potentiometer\s*$"
 )
@@ -1290,7 +1303,7 @@ RE_TARGET_INLINE = re.compile(
 RE_WHILE_TRUE     = re.compile(r"^\s*while\s+True\s*:\s*$")
 RE_WHILE          = re.compile(r"^\s*while\s+(.+?)\s*:\s*$")
 RE_FOR_RANGE      = re.compile(
-    r"^\s*for\s+([A-Za-z_]\w*)\s+in\s+range\(\s*(\d+)\s*\)\s*:\s*$"
+    r"^\s*for\s+([A-Za-z_]\w*)\s+in\s+range\((.*)\)\s*:\s*$"
 )
 RE_IF             = re.compile(r"^\s*if\s+(.+?)\s*:\s*$")
 RE_ELIF           = re.compile(r"^\s*elif\s+(.+?)\s*:\s*$")
@@ -1592,6 +1605,9 @@ def _handle_assignment_ast(
     def is_ultrasonic_call(n: ast.AST) -> bool:
         return isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "Ultrasonic"
 
+    def is_lcd_call(n: ast.AST) -> bool:
+        return isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "LCD"
+
     if isinstance(target, ast.Name) and (
         is_led_call(value)
         or is_rgb_led_call(value)
@@ -1599,6 +1615,7 @@ def _handle_assignment_ast(
         or is_buzzer_call(value)
         or is_serial_monitor_call(value)
         or is_ultrasonic_call(value)
+        or is_lcd_call(value)
     ):
         return None
     if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
@@ -1609,6 +1626,7 @@ def _handle_assignment_ast(
             or is_buzzer_call(elt)
             or is_serial_monitor_call(elt)
             or is_ultrasonic_call(elt)
+            or is_lcd_call(elt)
             for elt in value.elts
         ):
             return None
@@ -2029,6 +2047,8 @@ def _parse_simple_lines(
     ctx.setdefault("functions", {})
     list_info = ctx.setdefault("list_info", {})
     rgb_led_names = ctx.setdefault("rgb_led_names", set())
+    lcd_names = ctx.setdefault("lcd_names", set())
+    lcd_tick_names = ctx.setdefault("lcd_tick_names", set())
     servo_names = ctx.setdefault("servo_names", set())
     buzzer_names = ctx.setdefault("buzzer_names", set())
     button_names = ctx.setdefault("button_names", set())
@@ -2076,6 +2096,90 @@ def _parse_simple_lines(
                     return float(value)
         return _to_c_expr(arg_src, vars, ctx)
 
+    def _resolve_optional_numeric_arg(
+        arg_src: Optional[str],
+    ) -> Optional[Union[int, str]]:
+        if arg_src is None:
+            return None
+        text = arg_src.strip()
+        if not text or text == "None":
+            return None
+        try:
+            expr_ast = ast.parse(text, mode="eval").body
+        except Exception:
+            expr_ast = None
+        if expr_ast is not None and not _expr_has_name(expr_ast):
+            try:
+                value = _eval_const(text, vars)
+            except Exception:
+                pass
+            else:
+                if isinstance(value, bool):
+                    return 1 if value else 0
+                if isinstance(value, (int, float)):
+                    return int(value)
+        return _to_c_expr(text, vars, ctx)
+
+    def _resolve_bool_arg(arg_src: Optional[str], default: bool) -> Union[bool, str]:
+        if arg_src is None or not arg_src.strip():
+            return default
+        text = arg_src.strip()
+        try:
+            expr_ast = ast.parse(text, mode="eval").body
+        except Exception:
+            expr_ast = None
+        if expr_ast is not None and not _expr_has_name(expr_ast):
+            try:
+                value = _eval_const(text, vars)
+            except Exception:
+                pass
+            else:
+                if isinstance(value, bool):
+                    return value
+                if isinstance(value, (int, float)):
+                    return bool(value)
+        return _to_c_expr(text, vars, ctx)
+
+    def _require_string_literal(arg_src: Optional[str], label: str) -> str:
+        if arg_src is None:
+            raise ValueError(f"{label} must be provided")
+        text = arg_src.strip()
+        try:
+            expr_ast = ast.parse(text, mode="eval").body
+        except Exception as exc:
+            raise ValueError(f"{label} must be a string literal") from exc
+        if not (isinstance(expr_ast, ast.Constant) and isinstance(expr_ast.value, str)):
+            raise ValueError(f"{label} must be a string literal")
+        return expr_ast.value
+
+    def _resolve_align_arg(arg_src: Optional[str], default: str = "left") -> str:
+        if arg_src is None or not arg_src.strip():
+            return default
+        value = _require_string_literal(arg_src, "align").lower()
+        if value not in {"left", "center", "right"}:
+            raise ValueError("align must be 'left', 'center' or 'right'")
+        return value
+
+    def _resolve_style_arg(arg_src: Optional[str], default: str = "block") -> str:
+        allowed = {"block", "hash", "pipe", "dot"}
+        if arg_src is None or not arg_src.strip():
+            return default
+        value = _require_string_literal(arg_src, "style").lower()
+        if value not in allowed:
+            options = ", ".join(sorted(allowed))
+            raise ValueError(f"unknown progress style: {value!r} (choose from {options})")
+        return value
+
+    def _resolve_animation_arg(arg_src: Optional[str]) -> str:
+        allowed = {"scroll", "blink", "typewriter", "bounce"}
+        value = _require_string_literal(arg_src, "animation").lower()
+        if value not in allowed:
+            options = ", ".join(sorted(allowed))
+            raise ValueError(
+                f"unknown animation: {value!r} (choose from {options})"
+            )
+        return value
+
     i = 0
     while i < len(snippet):
         raw = snippet[i]
@@ -2099,6 +2203,7 @@ def _parse_simple_lines(
             or RE_IMPORT_TARGET.match(line)
             or RE_IMPORT_ULTRASONIC.match(line)
             or RE_IMPORT_BUTTON.match(line)
+            or RE_IMPORT_LCD.match(line)
         ):
             i += 1
             continue
@@ -2569,7 +2674,12 @@ def _parse_simple_lines(
         m = RE_FOR_RANGE.match(line)
         if m:
             var_name = m.group(1)
-            count = int(m.group(2))
+            args_src = m.group(2)
+            count_arg = _extract_call_argument(args_src, position=0)
+            extra_arg = _extract_call_argument(args_src, position=1)
+            if count_arg is None or extra_arg is not None:
+                raise ValueError("for-range loops require a single range(count) argument")
+            count = _resolve_numeric_arg(count_arg, 0)
             block, next_idx = _collect_block(snippet, i)
             child_ctx = dict(ctx)
             child_ctx["vars"] = dict(vars)
@@ -2649,6 +2759,87 @@ def _parse_simple_lines(
             continue
 
         # Led declaration with expression (uses env updated above)
+        m = RE_LCD_DECL.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            interface = "parallel"
+            i2c_arg = _extract_call_argument(args_src, keyword="i2c_addr")
+            cols_arg = _extract_call_argument(args_src, keyword="cols")
+            rows_arg = _extract_call_argument(args_src, keyword="rows")
+            backlight_arg = _extract_call_argument(args_src, keyword="backlight_pin")
+            rw_arg = _extract_call_argument(args_src, keyword="rw")
+            if i2c_arg is not None and i2c_arg.strip():
+                interface = "i2c"
+            cols_value = _resolve_numeric_arg(cols_arg, 16)
+            rows_value = _resolve_numeric_arg(rows_arg, 2)
+            backlight_value = _resolve_optional_numeric_arg(backlight_arg)
+            if interface == "i2c":
+                i2c_value = _resolve_numeric_arg(i2c_arg, 0)
+                lcd_names.add(name)
+                vars[name] = _ExprStr(name)
+                body.append(
+                    LCDDecl(
+                        name=name,
+                        cols=cols_value,
+                        rows=rows_value,
+                        interface="i2c",
+                        i2c_addr=i2c_value,
+                        backlight_pin=backlight_value,
+                    )
+                )
+                i += 1
+                continue
+
+            rs_arg = _extract_call_argument(args_src, keyword="rs")
+            en_arg = _extract_call_argument(args_src, keyword="en")
+            d4_arg = _extract_call_argument(args_src, keyword="d4")
+            d5_arg = _extract_call_argument(args_src, keyword="d5")
+            d6_arg = _extract_call_argument(args_src, keyword="d6")
+            d7_arg = _extract_call_argument(args_src, keyword="d7")
+            if rs_arg is None:
+                rs_arg = _extract_call_argument(args_src, position=0)
+            if en_arg is None:
+                en_arg = _extract_call_argument(args_src, position=1)
+            if d4_arg is None:
+                d4_arg = _extract_call_argument(args_src, position=2)
+            if d5_arg is None:
+                d5_arg = _extract_call_argument(args_src, position=3)
+            if d6_arg is None:
+                d6_arg = _extract_call_argument(args_src, position=4)
+            if d7_arg is None:
+                d7_arg = _extract_call_argument(args_src, position=5)
+            if cols_arg is None:
+                cols_pos = _extract_call_argument(args_src, position=6)
+                if cols_pos is not None:
+                    cols_value = _resolve_numeric_arg(cols_pos, 16)
+            if rows_arg is None:
+                rows_pos = _extract_call_argument(args_src, position=7)
+                if rows_pos is not None:
+                    rows_value = _resolve_numeric_arg(rows_pos, 2)
+            if not all(arg and arg.strip() for arg in (rs_arg, en_arg, d4_arg, d5_arg, d6_arg, d7_arg)):
+                raise ValueError("LCD parallel mode requires rs, en, d4, d5, d6 and d7 pins")
+            rw_value = _resolve_optional_numeric_arg(rw_arg)
+            lcd_names.add(name)
+            vars[name] = _ExprStr(name)
+            body.append(
+                LCDDecl(
+                    name=name,
+                    cols=cols_value,
+                    rows=rows_value,
+                    interface="parallel",
+                    rs=_resolve_numeric_arg(rs_arg, 0),
+                    en=_resolve_numeric_arg(en_arg, 0),
+                    d4=_resolve_numeric_arg(d4_arg, 0),
+                    d5=_resolve_numeric_arg(d5_arg, 0),
+                    d6=_resolve_numeric_arg(d6_arg, 0),
+                    d7=_resolve_numeric_arg(d7_arg, 0),
+                    rw=rw_value,
+                    backlight_pin=backlight_value,
+                )
+            )
+            i += 1
+            continue
+
         m = RE_LED_DECL.match(line)
         if m:
             name, expr = m.group(1), m.group(2)
@@ -3347,6 +3538,239 @@ def _parse_simple_lines(
                 i += 1
                 continue
 
+        m = RE_LCD_WRITE.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in lcd_names:
+                col_arg = _extract_call_argument(args_src, position=0)
+                row_arg = _extract_call_argument(args_src, position=1)
+                text_arg = _extract_call_argument(args_src, position=2)
+                if col_arg is None or row_arg is None or text_arg is None:
+                    raise ValueError("LCD.write requires column, row and text arguments")
+                clear_arg = _extract_call_argument(args_src, keyword="clear_row")
+                align_arg = _extract_call_argument(args_src, keyword="align")
+                body.append(
+                    LCDWrite(
+                        name=name,
+                        col=_to_c_expr(col_arg, vars, ctx),
+                        row=_to_c_expr(row_arg, vars, ctx),
+                        text=_to_c_expr(text_arg, vars, ctx),
+                        clear_row=_resolve_bool_arg(clear_arg, True),
+                        align=_resolve_align_arg(align_arg),
+                    )
+                )
+                i += 1
+                continue
+
+        m = RE_LCD_LINE.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in lcd_names:
+                row_arg = _extract_call_argument(args_src, position=0)
+                text_arg = _extract_call_argument(args_src, position=1)
+                if row_arg is None or text_arg is None:
+                    raise ValueError("LCD.line requires row and text arguments")
+                clear_arg = _extract_call_argument(args_src, keyword="clear_row")
+                align_arg = _extract_call_argument(args_src, keyword="align")
+                body.append(
+                    LCDLine(
+                        name=name,
+                        row=_to_c_expr(row_arg, vars, ctx),
+                        text=_to_c_expr(text_arg, vars, ctx),
+                        align=_resolve_align_arg(align_arg),
+                        clear_row=_resolve_bool_arg(clear_arg, True),
+                    )
+                )
+                i += 1
+                continue
+
+        m = RE_LCD_MESSAGE.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in lcd_names:
+                top_arg = _extract_call_argument(args_src, keyword="top")
+                if top_arg is None:
+                    top_arg = _extract_call_argument(args_src, position=0)
+                bottom_arg = _extract_call_argument(args_src, keyword="bottom")
+                if bottom_arg is None:
+                    bottom_arg = _extract_call_argument(args_src, position=1)
+                top_align_arg = _extract_call_argument(args_src, keyword="top_align")
+                bottom_align_arg = _extract_call_argument(args_src, keyword="bottom_align")
+                clear_rows_arg = _extract_call_argument(args_src, keyword="clear_rows")
+                body.append(
+                    LCDMessage(
+                        name=name,
+                        top=None
+                        if top_arg is None or not top_arg.strip() or top_arg.strip() == "None"
+                        else _to_c_expr(top_arg, vars, ctx),
+                        bottom=None
+                        if bottom_arg is None or not bottom_arg.strip() or bottom_arg.strip() == "None"
+                        else _to_c_expr(bottom_arg, vars, ctx),
+                        top_align=_resolve_align_arg(top_align_arg, "left"),
+                        bottom_align=_resolve_align_arg(bottom_align_arg, "left"),
+                        clear_rows=_resolve_bool_arg(clear_rows_arg, True),
+                    )
+                )
+                i += 1
+                continue
+
+        m = RE_LCD_CLEAR.match(line)
+        if m:
+            name = m.group(1)
+            if name in lcd_names:
+                body.append(LCDClear(name=name))
+                i += 1
+                continue
+
+        m = RE_LCD_DISPLAY.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in lcd_names:
+                on_arg = _extract_call_argument(args_src, keyword="on")
+                if on_arg is None:
+                    on_arg = _extract_call_argument(args_src)
+                if on_arg is None or not on_arg.strip():
+                    raise ValueError("LCD.display requires a boolean argument")
+                body.append(
+                    LCDDisplay(name=name, on=_resolve_bool_arg(on_arg, True))
+                )
+                i += 1
+                continue
+
+        m = RE_LCD_BACKLIGHT.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in lcd_names:
+                on_arg = _extract_call_argument(args_src, keyword="on")
+                if on_arg is None:
+                    on_arg = _extract_call_argument(args_src)
+                if on_arg is None or not on_arg.strip():
+                    raise ValueError("LCD.backlight requires a boolean argument")
+                body.append(
+                    LCDBacklight(name=name, on=_resolve_bool_arg(on_arg, True))
+                )
+                i += 1
+                continue
+
+        m = RE_LCD_BRIGHTNESS.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in lcd_names:
+                level_arg = _extract_call_argument(args_src, keyword="level")
+                if level_arg is None:
+                    level_arg = _extract_call_argument(args_src)
+                if level_arg is None or not level_arg.strip():
+                    raise ValueError("LCD.brightness requires a level argument")
+                body.append(
+                    LCDBrightness(name=name, level=_to_c_expr(level_arg, vars, ctx))
+                )
+                i += 1
+                continue
+
+        m = RE_LCD_GLYPH.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in lcd_names:
+                slot_arg = _extract_call_argument(args_src, keyword="slot")
+                if slot_arg is None:
+                    slot_arg = _extract_call_argument(args_src, position=0)
+                bitmap_arg = _extract_call_argument(args_src, keyword="bitmap")
+                if bitmap_arg is None:
+                    bitmap_arg = _extract_call_argument(args_src, position=1)
+                if slot_arg is None or bitmap_arg is None:
+                    raise ValueError("LCD.glyph requires slot and bitmap arguments")
+                try:
+                    bitmap_value = _eval_const(bitmap_arg, vars)
+                except Exception as exc:
+                    raise ValueError("glyph bitmap must be a list of integers") from exc
+                if not isinstance(bitmap_value, (list, tuple)):
+                    raise ValueError("glyph bitmap must be a list of integers")
+                bitmap_list: List[int] = []
+                for entry in bitmap_value:
+                    if not isinstance(entry, (int, float)):
+                        raise ValueError("glyph bitmap must be a list of integers")
+                    bitmap_list.append(int(entry))
+                if len(bitmap_list) != 8:
+                    raise ValueError("glyph bitmap must contain 8 rows")
+                body.append(
+                    LCDGlyph(
+                        name=name,
+                        slot=_to_c_expr(slot_arg, vars, ctx),
+                        bitmap=bitmap_list,
+                    )
+                )
+                i += 1
+                continue
+
+        m = RE_LCD_PROGRESS.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in lcd_names:
+                row_arg = _extract_call_argument(args_src, position=0)
+                value_arg = _extract_call_argument(args_src, position=1)
+                if row_arg is None or value_arg is None:
+                    raise ValueError("LCD.progress requires row and value arguments")
+                max_arg = _extract_call_argument(args_src, keyword="max_value")
+                if max_arg is None:
+                    max_arg = _extract_call_argument(args_src, position=2)
+                width_arg = _extract_call_argument(args_src, keyword="width")
+                style_arg = _extract_call_argument(args_src, keyword="style")
+                label_arg = _extract_call_argument(args_src, keyword="label")
+                if label_arg is None:
+                    label_arg = _extract_call_argument(args_src, position=3)
+                label_value = None
+                if label_arg is not None and label_arg.strip() and label_arg.strip() != "None":
+                    label_value = _to_c_expr(label_arg, vars, ctx)
+                body.append(
+                    LCDProgress(
+                        name=name,
+                        row=_to_c_expr(row_arg, vars, ctx),
+                        value=_to_c_expr(value_arg, vars, ctx),
+                        max_value=_resolve_numeric_arg(max_arg, 100),
+                        width=_resolve_optional_numeric_arg(width_arg),
+                        style=_resolve_style_arg(style_arg, "block"),
+                        label=label_value,
+                    )
+                )
+                i += 1
+                continue
+
+        m = RE_LCD_ANIMATE.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in lcd_names:
+                anim_arg = _extract_call_argument(args_src, keyword="style")
+                if anim_arg is None:
+                    anim_arg = _extract_call_argument(args_src, keyword="animation")
+                if anim_arg is None:
+                    anim_arg = _extract_call_argument(args_src, position=0)
+                row_arg = _extract_call_argument(args_src, keyword="row")
+                if row_arg is None:
+                    row_arg = _extract_call_argument(args_src, position=1)
+                text_arg = _extract_call_argument(args_src, keyword="text")
+                if text_arg is None:
+                    text_arg = _extract_call_argument(args_src, position=2)
+                if anim_arg is None or row_arg is None or text_arg is None:
+                    raise ValueError("LCD.animate requires animation name, row and text")
+                animation_name = _resolve_animation_arg(anim_arg)
+                speed_arg = _extract_call_argument(args_src, keyword="speed_ms")
+                if speed_arg is None:
+                    speed_arg = _extract_call_argument(args_src, position=3)
+                loop_arg = _extract_call_argument(args_src, keyword="loop")
+                lcd_tick_names.add(name)
+                body.append(
+                    LCDAnimate(
+                        name=name,
+                        animation=animation_name,
+                        row=_to_c_expr(row_arg, vars, ctx),
+                        text=_to_c_expr(text_arg, vars, ctx),
+                        speed_ms=_resolve_numeric_arg(speed_arg, 200),
+                        loop=_resolve_bool_arg(loop_arg, False),
+                    )
+                )
+                i += 1
+                continue
+
         m = RE_SERIAL_WRITE.match(line)
         if m:
             owner, arg_src = m.group(1), m.group(2)
@@ -3637,6 +4061,13 @@ def parse(src: str) -> Program:
         for sig in keep:
             selected_functions.append(variants[sig])
 
+    lcd_ticks = [
+        LCDTick(name=name)
+        for name in sorted(ctx.get("lcd_tick_names", set()))
+    ]
+    if lcd_ticks:
+        loop_body = lcd_ticks + loop_body
+
     button_polls = [
         ButtonPoll(name=name)
         for name in sorted(ctx.get("button_poll_names", set()))
@@ -3653,3 +4084,14 @@ def parse(src: str) -> Program:
         functions=selected_functions,
         ultrasonic_measurements=set(ctx.get("ultrasonic_measure_calls", set())),
     )
+RE_LCD_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*LCD\s*\(\s*(.*?)\s*\)\s*$")
+RE_LCD_WRITE = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.write\(\s*(.*)\s*\)\s*$")
+RE_LCD_LINE = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.line\(\s*(.*)\s*\)\s*$")
+RE_LCD_MESSAGE = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.message\(\s*(.*)\s*\)\s*$")
+RE_LCD_CLEAR = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.clear\(\s*\)\s*$")
+RE_LCD_DISPLAY = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.display\(\s*(.*)\s*\)\s*$")
+RE_LCD_BACKLIGHT = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.backlight\(\s*(.*)\s*\)\s*$")
+RE_LCD_BRIGHTNESS = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.brightness\(\s*(.*)\s*\)\s*$")
+RE_LCD_GLYPH = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.glyph\(\s*(.*)\s*\)\s*$")
+RE_LCD_PROGRESS = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.progress\(\s*(.*)\s*\)\s*$")
+RE_LCD_ANIMATE = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.animate\(\s*(.*)\s*\)\s*$")

@@ -44,6 +44,7 @@ graphql
 Copy code
 src/Reduino/
 ├── Actuators/         # LED, Buzzer, Servo, etc.
+├── Displays/          # LCD and other visual outputs
 ├── Sensors/           # Ultrasonic, Button, Potentiometer, etc.
 ├── Communication/     # SerialMonitor and future I/O classes
 ├── Utils/             # Timing helpers (sleep, map)
@@ -84,7 +85,7 @@ Action node	LedOn, BuzzerMelody, ServoWrite
 Class name (Python)	Led, Buzzer, Servo, Ultrasonic
 File name	lowercase: led.py, buzzer.py
 
-# Adding a New Actuator or Sensor
+# Adding a New Device (Actuator / Sensor / Display)
 Reduino uses an IR (Intermediate Representation) between Python and C++.
 
 To add new hardware, follow these steps carefully.
@@ -163,7 +164,11 @@ class Motor:
 ```
 Host-side methods don’t perform real actions — they only exist for syntax and transpilation.
 
-6. Write Tests
+6. Register the Device
+
+Add the new class to the appropriate `__init__.py` (e.g. `src/Reduino/Displays/__init__.py`) so users can import it. If the hardware needs additional PlatformIO libraries, update `_collect_required_libraries()` in `src/Reduino/__init__.py`.
+
+7. Write Tests
 Parser Test (tests/test_parser.py)
 Ensure Reduino recognizes your new device:
 
@@ -181,7 +186,7 @@ cpp = emit(parse(code))
 assert "analogWrite" in cpp
 ```
 
-7. Documentation & Examples
+8. Documentation & Examples
 Update README.md with:
 
 A short table of methods and parameters

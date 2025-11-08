@@ -266,3 +266,155 @@ def test_emit_for_range_and_try_except(src, norm) -> None:
     assert "digitalWrite(9, __state_led ? HIGH : LOW);" in cpp
     assert "try {" in cpp
     assert "catch (Exception &)" in cpp
+
+
+def test_emit_for_range_with_expression_limit(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Actuators import Led
+
+            led = Led(7)
+            total = 4
+            for step in range(total + 2):
+                led.on()
+            """
+        )
+    )
+
+    text = norm(cpp)
+    assert "for (int step = 0; step < (total + 2); ++step) {" in cpp
+    assert text.count("digitalWrite(7, HIGH);") == 1
+
+
+def test_emit_lcd_parallel_support(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Displays import LCD
+
+            lcd = LCD(rs=12, en=11, d4=5, d5=4, d6=3, d7=2, cols=16, rows=2, backlight_pin=9)
+            lcd.line(0, "Hello", align="center")
+            lcd.write(0, 1, "World", align="right")
+            lcd.progress(1, 30, max_value=100, width=12, label="Load")
+            """
+        )
+    )
+
+    setup_section = norm(cpp.split("void setup() {", 1)[1].split("void loop()", 1)[0])
+    text = norm(cpp)
+
+    assert "#include <LiquidCrystal.h>" in cpp
+    assert "LiquidCrystal __redu_lcd_lcd(12, 11, 5, 4, 3, 2);" in cpp
+    assert "__redu_lcd_lcd.begin(__redu_lcd_cols_lcd, __redu_lcd_rows_lcd);" in setup_section
+    assert "pinMode(9, OUTPUT);" in setup_section
+    assert "analogWrite(9, __redu_lcd_brightness_lcd);" in setup_section
+    assert (
+        "__redu_lcd_write_aligned(__redu_lcd_lcd, __redu_lcd_cols_lcd, 0, static_cast<int>(0), String(\"Hello\"), true, __redu_lcd_align_center);"
+        in text
+    )
+    assert (
+        "__redu_lcd_write_aligned(__redu_lcd_lcd, __redu_lcd_cols_lcd, static_cast<int>(0), static_cast<int>(1), String(\"World\"), true, __redu_lcd_align_right);"
+        in text
+    )
+    assert "__redu_lcd_progress(__redu_lcd_lcd" in text
+    assert "static_cast<char>(0xff)" in text
+
+
+def test_emit_lcd_progress_alt_style(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Displays import LCD
+
+            panel = LCD(rs=12, en=11, d4=5, d5=4, d6=3, d7=2)
+            panel.progress(0, 10, max_value=100, style="hash")
+            """
+        )
+    )
+
+    text = norm(cpp)
+    assert "__redu_lcd_progress(__redu_lcd_panel" in text
+    assert "'#'" in text
+
+
+def test_emit_lcd_i2c_animation_injects_tick(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Displays import LCD
+
+            panel = LCD(i2c_addr=0x27, cols=20, rows=4)
+            panel.message("Top", bottom="Bottom", top_align="center", bottom_align="right")
+            panel.animate("scroll", 2, "Scrolling", speed_ms=150, loop=True)
+            """
+        )
+    )
+
+    setup_section = norm(cpp.split("void setup() {", 1)[1].split("void loop()", 1)[0])
+    loop_section = norm(cpp.split("void loop()", 1)[1])
+
+    assert "#include <Wire.h>" in cpp
+    assert "#include <LiquidCrystal_I2C.h>" in cpp
+    assert "LiquidCrystal_I2C __redu_lcd_panel" in cpp
+    assert "__redu_lcd_panel.init();" in setup_section
+    assert "__redu_lcd_panel.backlight();" in setup_section
+    assert "__redu_lcd_start_scroll(__redu_lcd_anim_panel_0" in setup_section
+    assert "__redu_lcd_tick_scroll(__redu_lcd_anim_panel_0" in loop_section
+    assert "delay(" not in loop_section
+
+
+def test_emit_lcd_animation_variants(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Displays import LCD
+
+            lcd = LCD(rs=12, en=11, d4=5, d5=4, d6=3, d7=2, cols=16, rows=2)
+            lcd.animate("blink", 0, "Blink", loop=True)
+            lcd.animate("typewriter", 1, "Typing", speed_ms=120)
+            lcd.animate("bounce", 0, "Go", speed_ms=90)
+            """
+        )
+    )
+
+    text = norm(cpp)
+    loop_section = norm(cpp.split("void loop()", 1)[1])
+
+    assert "__redu_lcd_start_blink(" in text
+    assert "__redu_lcd_start_typewriter(" in text
+    assert "__redu_lcd_start_bounce(" in text
+    assert "__redu_lcd_tick_blink(" in loop_section
+    assert "__redu_lcd_tick_typewriter(" in loop_section
+    assert "__redu_lcd_tick_bounce(" in loop_section
+
+
+def test_emit_lcd_display_controls_backlight(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Displays import LCD
+
+            lcd = LCD(rs=12, en=11, d4=5, d5=4, d6=3, d7=2, backlight_pin=6)
+            lcd.display(False)
+            lcd.display(True)
+
+            panel = LCD(i2c_addr=0x27, cols=16, rows=2)
+            panel.display(False)
+            panel.display(True)
+            """
+        )
+    )
+
+    setup_section = cpp.split("void setup() {", 1)[1].split("void loop()", 1)[0]
+    assert "__redu_lcd_lcd.noDisplay();" in setup_section
+    assert "__redu_lcd_backlight_state_lcd = false;" in setup_section
+    assert "analogWrite(6, 0);" in setup_section
+    assert "__redu_lcd_lcd.display();" in setup_section
+    assert "__redu_lcd_backlight_state_lcd = true;" in setup_section
+    assert "analogWrite(6, __redu_lcd_brightness_lcd);" in setup_section
+
+    assert "__redu_lcd_panel.noDisplay();" in setup_section
+    assert "__redu_lcd_panel.noBacklight();" in setup_section
+    assert "__redu_lcd_panel.display();" in setup_section
+    assert "__redu_lcd_panel.backlight();" in setup_section

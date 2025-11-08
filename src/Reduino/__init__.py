@@ -11,7 +11,7 @@ import tempfile
 from typing import List, Type
 
 from Reduino.toolchain.pio import compile_upload, ensure_pio, write_project
-from Reduino.transpile.ast import Program, ServoDecl
+from Reduino.transpile.ast import LCDDecl, Program, ServoDecl
 from Reduino.transpile.emitter import emit
 from Reduino.transpile.parser import parse
 
@@ -55,6 +55,31 @@ def _collect_required_libraries(program: Program) -> List[str]:
     requirements: List[str] = []
     if _program_contains(program, ServoDecl):
         requirements.append("Servo")
+    lcd_interfaces: set[str] = set()
+
+    def _visit(value: object) -> None:
+        if isinstance(value, LCDDecl):
+            lcd_interfaces.add(value.interface)
+            return
+        if isinstance(value, (str, bytes, bytearray)):
+            return
+        if isinstance(value, (list, tuple, set)):
+            for item in value:
+                _visit(item)
+            return
+        if isinstance(value, dict):
+            for item in value.values():
+                _visit(item)
+            return
+        if hasattr(value, "__dict__"):
+            for attr_value in value.__dict__.values():
+                _visit(attr_value)
+
+    _visit(program)
+    if "parallel" in lcd_interfaces:
+        requirements.append("LiquidCrystal")
+    if "i2c" in lcd_interfaces:
+        requirements.append("LiquidCrystal_I2C")
     return requirements
 
 
