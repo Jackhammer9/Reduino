@@ -94,8 +94,8 @@ Place `target()` **at the very top of your script**, immediately after imports. 
 | ---------: | :----: | :----------: | --------------------------------------------------------------------------- |
 |     `port` |  `str` |      —       | Serial port, e.g. `"COM3"` or `"/dev/ttyACM0"`.                             |
 |   `upload` | `bool` |    `True`    | If `True`, compile & upload via PlatformIO. If `False`, only transpile.     |
-| `platform` |  `str` | `"atmelavr"` | PlatformIO platform ID, e.g. `"espressif32"` for ESP32 boards.             |
-|    `board` |  `str` |   `"uno"`    | PlatformIO board ID, e.g. `"esp32dev"`. Must be compatible with `platform`. |
+| `platform` |  `str` | `"atmelavr"` | PlatformIO platform ID. Reduino currently supports `atmelavr` and `atmelmegaavr`. |
+|    `board` |  `str` |   `"uno"`    | PlatformIO board ID. Must be compatible with `platform`. |
 
 **Returns:** `str` of the generated Arduino C++ source.
 
@@ -149,31 +149,30 @@ print(cpp)
 
 ### Targeting different platforms & boards
 
-Reduino validates that the requested PlatformIO platform/board pair is supported. The
-following combinations are available out of the box:
+Reduino validates that the requested PlatformIO platform/board pair is supported.
+At the moment two PlatformIO platforms are available:
 
-| PlatformIO platform | Supported boards                 |
-| ------------------- | -------------------------------- |
-| `atmelavr`          | `uno`, `nano`                     |
-| `atmelsam`          | `due`                             |
-| `espressif32`       | `esp32dev`, `esp32doit-devkit-v1` |
+* `atmelavr` – classic AVR-based boards (Uno, Nano, Leonardo, etc.).
+* `atmelmegaavr` – newer megaAVR devices (Nano Every, Uno WiFi Rev2, Curiosity Nano kits, ...).
 
-If you pick an unsupported board, or a board that does not belong to the selected
-platform, `target()` raises a `ValueError` with a helpful message.
+Every board listed in the [PlatformIO board registry for `atmelavr`](https://docs.platformio.org/en/latest/boards/atmelavr.html)
+and [`atmelmegaavr`](https://docs.platformio.org/en/latest/boards/atmelmegaavr.html) can be targeted. If you choose an
+unsupported board, or one that does not belong to the selected platform, `target()` raises
+a `ValueError` with a helpful message.
 
 ```python
 from Reduino import target
 
-# Build for an ESP32 dev module without uploading automatically.
+# Build for an Arduino Nano Every without uploading automatically.
 target(
     "COM9",
     upload=False,
-    platform="espressif32",
-    board="esp32dev",
+    platform="atmelmegaavr",
+    board="nano_every",
 )
 
-# Build for an Arduino Nano and upload immediately.
-target("/dev/ttyUSB0", platform="atmelavr", board="nano")
+# Build for a classic Arduino Uno and upload immediately.
+target("/dev/ttyUSB0", platform="atmelavr", board="uno")
 ```
 
 > [!IMPORTANT]
