@@ -29,7 +29,6 @@ the emitter's bundled patterns.  Each name is case-sensitive.
 
 from __future__ import annotations
 
-
 class Buzzer:
     """Lightweight stand-in so user code can instantiate :class:`Buzzer`.
 

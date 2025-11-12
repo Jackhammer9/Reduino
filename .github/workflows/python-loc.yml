@@ -28,5 +28,5 @@ jobs:
           curl -X PATCH "https://api.github.com/gists/${GIST_ID}" \
             -H "Authorization: token ${GIST_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            -d "{\"files\": {\"python-loc.json\": {\"content\": \"{\\\"schemaVersion\\\":1,\\\"label\\\":\\\"python loc\\\",\\\"message\\\":\\\"${LOC}\\\",\\\"color\\\":\\\"blue\\\"}\"}}}"
+            -d "{\"files\": {\"python-loc.json\": {\"content\": \"{\\\"schemaVersion\\\":1,\\\"label\\\":\\\"Python Lines Of Code\\\",\\\"message\\\":\\\"${LOC}\\\",\\\"color\\\":\\\"blue\\\"}\"}}}"
 
