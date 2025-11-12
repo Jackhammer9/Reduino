@@ -28,6 +28,7 @@ from Reduino.transpile.ast import (
     ButtonPoll,
     ForRangeLoop,
     FunctionDef,
+    ExprStmt,
     LedDecl,
     LedOff,
     LedToggle,
@@ -133,6 +134,55 @@ def test_parser_handles_buzzer_primitives(src) -> None:
     assert isinstance(melody, BuzzerMelody)
     assert melody.melody == "success"
     assert melody.tempo == pytest.approx(180)
+
+
+def test_parser_supports_core_primitives(src) -> None:
+    code = src(
+        """
+        from Reduino.Core import (
+            pin_mode,
+            digital_write,
+            analog_write,
+            digital_read,
+            analog_read,
+            INPUT,
+            OUTPUT,
+            INPUT_PULLUP,
+            HIGH,
+            LOW,
+        )
+
+        pin_mode(7, OUTPUT)
+        digital_write(7, HIGH)
+        analog_write(6, 42)
+        value = digital_read(5)
+        analog_value = analog_read(A0)
+        """
+    )
+
+    program = _parse(code)
+
+    exprs = [
+        node.expr
+        for node in program.setup_body
+        if isinstance(node, ExprStmt)
+    ]
+    assert exprs[:3] == [
+        "pinMode(7, OUTPUT)",
+        "digitalWrite(7, HIGH)",
+        "analogWrite(6, 42)",
+    ]
+
+    assignments = [
+        node.expr
+        for node in program.setup_body
+        if isinstance(node, VarAssign)
+    ]
+    assert assignments == ["digitalRead(5)", "analogRead(A0)"]
+
+    decls = {decl.name: decl.c_type for decl in program.global_decls}
+    assert decls["value"] == "int"
+    assert decls["analog_value"] == "int"
 
 
 def test_parser_buzzer_optional_arguments(src) -> None:
