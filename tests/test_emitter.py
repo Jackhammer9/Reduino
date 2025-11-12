@@ -35,6 +35,39 @@ def test_emit_generates_setup_and_loop(src, norm) -> None:
     assert "// no loop actions" in loop_section or loop_section.strip() == "{\n}\n"
 
 
+def test_emit_core_primitives(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Core import (
+                pin_mode,
+                digital_write,
+                analog_write,
+                digital_read,
+                analog_read,
+                INPUT,
+                OUTPUT,
+                HIGH,
+                LOW,
+            )
+
+            pin_mode(7, OUTPUT)
+            digital_write(7, HIGH)
+            analog_write(6, 42)
+            value = digital_read(5)
+            analog_value = analog_read(A0)
+            """
+        )
+    )
+
+    text = norm(cpp)
+    assert "pinMode(7, OUTPUT);" in text
+    assert "digitalWrite(7, HIGH);" in text
+    assert "analogWrite(6, 42);" in text
+    assert "value = digitalRead(5);" in text
+    assert "analog_value = analogRead(A0);" in text
+
+
 def test_emit_infinite_loop_moves_body_to_loop(src, norm) -> None:
     cpp = compile_source(
         src(

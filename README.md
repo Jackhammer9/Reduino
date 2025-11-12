@@ -63,6 +63,7 @@
   * [Utilities](#utilities)
     * [sleep](#sleep)
     * [map](#map)
+  * [Core](#core)
 * [Supported Python features](#supported-python-features)
 * [License](#license)
 
@@ -481,6 +482,36 @@ target("COM3")
 from Reduino.Utils import map
 mapped = map(512, 0, 1023, 0.0, 5.0)  # 2.5-ish
 print(mapped)
+```
+
+### Core
+
+The **Core** module exposes low-level helpers that map directly to the Arduino
+API. Use these when you need to configure a pin or interact with a sensor that
+doesn't yet have a dedicated Reduino abstraction.
+
+| Helper | Description |
+| ------ | ----------- |
+| `pin_mode(pin, mode)` | Configure a pin for `INPUT`, `INPUT_PULLUP`, or `OUTPUT`. |
+| `digital_write(pin, value)` | Write `HIGH`/`LOW` to a digital pin. |
+| `analog_write(pin, value)` | Output a PWM value (0–255). |
+| `digital_read(pin)` | Read a digital pin (returns `0` or `1`). |
+| `analog_read(pin)` | Read an analogue value (0–1023 on most boards). |
+
+Constants `INPUT`, `OUTPUT`, `INPUT_PULLUP`, `HIGH`, and `LOW` mirror the
+Arduino macros so your code matches what you would write in C++.
+
+```python
+from Reduino import target
+target("COM3")
+
+from Reduino.Core import pin_mode, digital_write, digital_read, OUTPUT, HIGH, LOW
+
+pin_mode(7, OUTPUT)
+digital_write(7, HIGH)
+
+if digital_read(2) == HIGH:
+    digital_write(7, LOW)
 ```
 
 ---

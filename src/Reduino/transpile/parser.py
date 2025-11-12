@@ -162,6 +162,8 @@ _BUILTIN_CALL_RETURN_TYPES = {
     "abs": "int",
     "max": "int",
     "min": "int",
+    "digital_read": "int",
+    "analog_read": "int",
 }
 
 def _eval_const(expr: str, env: dict):
@@ -369,6 +371,40 @@ def _to_c_expr(
             if isinstance(bound, (str, tuple, list)):
                 return len(bound)
         return None
+
+    def _render_pin_argument(node: ast.AST) -> str:
+        expr = emit(node)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            candidate = node.value.strip()
+            if candidate.isdigit():
+                return candidate
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", candidate):
+                return candidate
+        return expr
+
+    def _call_argument(
+        call: ast.Call, position: int, keyword: Optional[str]
+    ) -> Optional[ast.AST]:
+        value: Optional[ast.AST] = None
+        has_positional = len(call.args) > position
+        has_keyword = False if keyword is None else any(
+            kw.arg == keyword for kw in call.keywords
+        )
+        if has_positional and has_keyword:
+            raise ValueError("duplicate argument provided")
+        if has_positional:
+            value = call.args[position]
+        elif has_keyword:
+            for kw in call.keywords:
+                if kw.arg == keyword:
+                    value = kw.value
+                    break
+        return value
+
+    def _ensure_allowed_keywords(call: ast.Call, allowed: Set[str]) -> None:
+        for kw in call.keywords:
+            if kw.arg not in allowed:
+                raise ValueError("unsupported keyword arguments in call")
 
     def emit(n: ast.AST) -> str:
         if isinstance(n, ast.Constant):
@@ -695,6 +731,49 @@ def _to_c_expr(
 
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name):
             fname = n.func.id
+            if fname == "pin_mode":
+                _ensure_allowed_keywords(n, {"pin", "mode"})
+                pin_node = _call_argument(n, 0, "pin")
+                mode_node = _call_argument(n, 1, "mode")
+                if pin_node is None or mode_node is None:
+                    raise ValueError("pin_mode requires pin and mode arguments")
+                pin_expr = _render_pin_argument(pin_node)
+                mode_expr = emit(mode_node)
+                return f"pinMode({pin_expr}, {mode_expr})"
+            if fname == "digital_write":
+                _ensure_allowed_keywords(n, {"pin", "value"})
+                pin_node = _call_argument(n, 0, "pin")
+                value_node = _call_argument(n, 1, "value")
+                if pin_node is None or value_node is None:
+                    raise ValueError(
+                        "digital_write requires pin and value arguments"
+                    )
+                pin_expr = _render_pin_argument(pin_node)
+                value_expr = emit(value_node)
+                return f"digitalWrite({pin_expr}, {value_expr})"
+            if fname == "analog_write":
+                _ensure_allowed_keywords(n, {"pin", "value"})
+                pin_node = _call_argument(n, 0, "pin")
+                value_node = _call_argument(n, 1, "value")
+                if pin_node is None or value_node is None:
+                    raise ValueError("analog_write requires pin and value arguments")
+                pin_expr = _render_pin_argument(pin_node)
+                value_expr = emit(value_node)
+                return f"analogWrite({pin_expr}, {value_expr})"
+            if fname == "digital_read":
+                _ensure_allowed_keywords(n, {"pin"})
+                pin_node = _call_argument(n, 0, "pin")
+                if pin_node is None:
+                    raise ValueError("digital_read requires a pin argument")
+                pin_expr = _render_pin_argument(pin_node)
+                return f"digitalRead({pin_expr})"
+            if fname == "analog_read":
+                _ensure_allowed_keywords(n, {"pin"})
+                pin_node = _call_argument(n, 0, "pin")
+                if pin_node is None:
+                    raise ValueError("analog_read requires a pin argument")
+                pin_expr = _render_pin_argument(pin_node)
+                return f"analogRead({pin_expr})"
             if fname == "str" and len(n.args) == 1 and not n.keywords:
                 return f"String({emit(n.args[0])})"
             if fname in {"int", "float"} and len(n.args) == 1 and not n.keywords:
@@ -1237,6 +1316,7 @@ RE_IMPORT_BUZZER  = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+Buzzer
 RE_IMPORT_SLEEP   = re.compile(r"^\s*from\s+Reduino\.Utils\s+import\s+sleep\s*$")
 RE_IMPORT_SERIAL  = re.compile(r"^\s*from\s+Reduino\.Communication\s+import\s+SerialMonitor\s*$")
 RE_IMPORT_TARGET  = re.compile(r"^\s*from\s+Reduino\s+import\s+target\s*$")
+RE_IMPORT_CORE    = re.compile(r"^\s*from\s+Reduino\.Core\s+import\s+.*$")
 RE_IMPORT_ULTRASONIC = re.compile(r"^\s*from\s+Reduino\.Sensors\s+import\s+Ultrasonic\s*$")
 RE_IMPORT_BUTTON  = re.compile(r"^\s*from\s+Reduino\.Sensors\s+import\s+Button\s*$")
 RE_IMPORT_LCD     = re.compile(r"^\s*from\s+Reduino\.Displays\s+import\s+LCD\s*$")
@@ -3936,6 +4016,7 @@ def parse(src: str) -> Program:
             or RE_IMPORT_SLEEP.match(text)
             or RE_IMPORT_SERIAL.match(text)
             or RE_IMPORT_TARGET.match(text)
+            or RE_IMPORT_CORE.match(text)
             or RE_IMPORT_ULTRASONIC.match(text)
             or RE_IMPORT_BUTTON.match(text)
             or RE_IMPORT_POTENTIOMETER.match(text)
