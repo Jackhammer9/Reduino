@@ -155,10 +155,7 @@ At the moment two PlatformIO platforms are available:
 * `atmelavr` – classic AVR-based boards (Uno, Nano, Leonardo, etc.).
 * `atmelmegaavr` – newer megaAVR devices (Nano Every, Uno WiFi Rev2, Curiosity Nano kits, ...).
 
-Every board listed in the [PlatformIO board registry for `atmelavr`](https://docs.platformio.org/en/latest/boards/atmelavr.html)
-and [`atmelmegaavr`](https://docs.platformio.org/en/latest/boards/atmelmegaavr.html) can be targeted. If you choose an
-unsupported board, or one that does not belong to the selected platform, `target()` raises
-a `ValueError` with a helpful message.
+Every board listed in the [PlatformIO board registry for all platforms](https://docs.platformio.org/en/latest/boards/index.html) can be targeted. If you choose an unsupported board, or one that does not belong to the selected platform, `target()` raises a `ValueError` with a helpful message.
 
 ```python
 from Reduino import target
