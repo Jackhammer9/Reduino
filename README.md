@@ -90,10 +90,12 @@ pip install platformio  # required for automatic uploads
 
 Place `target()` **at the very top of your script**, immediately after imports. This is the entry point that tells Reduino to parse your entire file, transpile it to Arduino C++, and (optionally) upload it.
 
-| Parameter |  Type  | Default | Description                                                             |
-| --------: | :----: | :-----: | ----------------------------------------------------------------------- |
-|    `port` |  `str` |    —    | Serial port, e.g. `"COM3"` or `"/dev/ttyACM0"`.                         |
-|  `upload` | `bool` |  `True` | If `True`, compile & upload via PlatformIO. If `False`, only transpile. |
+| Parameter  |  Type  |   Default    | Description                                                                 |
+| ---------: | :----: | :----------: | --------------------------------------------------------------------------- |
+|     `port` |  `str` |      —       | Serial port, e.g. `"COM3"` or `"/dev/ttyACM0"`.                             |
+|   `upload` | `bool` |    `True`    | If `True`, compile & upload via PlatformIO. If `False`, only transpile.     |
+| `platform` |  `str` | `"atmelavr"` | PlatformIO platform ID, e.g. `"espressif32"` for ESP32 boards.             |
+|    `board` |  `str` |   `"uno"`    | PlatformIO board ID, e.g. `"esp32dev"`. Must be compatible with `platform`. |
 
 **Returns:** `str` of the generated Arduino C++ source.
 
@@ -143,6 +145,35 @@ cpp = target("COM3", upload=False)
 print(cpp)
 
 # Your Reduino code below...
+```
+
+### Targeting different platforms & boards
+
+Reduino validates that the requested PlatformIO platform/board pair is supported. The
+following combinations are available out of the box:
+
+| PlatformIO platform | Supported boards                 |
+| ------------------- | -------------------------------- |
+| `atmelavr`          | `uno`, `nano`                     |
+| `atmelsam`          | `due`                             |
+| `espressif32`       | `esp32dev`, `esp32doit-devkit-v1` |
+
+If you pick an unsupported board, or a board that does not belong to the selected
+platform, `target()` raises a `ValueError` with a helpful message.
+
+```python
+from Reduino import target
+
+# Build for an ESP32 dev module without uploading automatically.
+target(
+    "COM9",
+    upload=False,
+    platform="espressif32",
+    board="esp32dev",
+)
+
+# Build for an Arduino Nano and upload immediately.
+target("/dev/ttyUSB0", platform="atmelavr", board="nano")
 ```
 
 > [!IMPORTANT]

@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import pathlib
 
+import pytest
+
 from Reduino import _collect_required_libraries
-from Reduino.toolchain.pio import write_project
+
+from Reduino.toolchain.pio import validate_platform_board, write_project
 from Reduino.transpile.ast import LCDDecl, Program, ServoDecl
 
 
@@ -16,6 +19,8 @@ def test_write_project_includes_lib_deps(tmp_path) -> None:
         tmp_path,
         cpp_code="void setup() {}\nvoid loop() {}\n",
         port="/dev/ttyACM0",
+        platform="atmelavr",
+        board="uno",
         lib_deps=["Servo"],
     )
     ini = _read_ini(tmp_path)
@@ -28,9 +33,40 @@ def test_write_project_omits_empty_lib_deps(tmp_path) -> None:
         tmp_path,
         cpp_code="void setup() {}\nvoid loop() {}\n",
         port="/dev/ttyACM0",
+        platform="atmelavr",
+        board="uno",
     )
     ini = _read_ini(tmp_path)
     assert "lib_deps" not in ini
+
+
+def test_write_project_renders_platform_and_board(tmp_path) -> None:
+    write_project(
+        tmp_path,
+        cpp_code="void setup() {}\nvoid loop() {}\n",
+        port="/dev/ttyUSB0",
+        platform="espressif32",
+        board="esp32dev",
+    )
+    ini = _read_ini(tmp_path)
+    assert "[env:esp32dev]" in ini
+    assert "platform = espressif32" in ini
+    assert "board = esp32dev" in ini
+
+
+def test_validate_platform_board_rejects_unknown_platform() -> None:
+    with pytest.raises(ValueError):
+        validate_platform_board("mystery", "uno")
+
+
+def test_validate_platform_board_rejects_unknown_board() -> None:
+    with pytest.raises(ValueError):
+        validate_platform_board("atmelavr", "not-a-board")
+
+
+def test_validate_platform_board_rejects_mismatched_pair() -> None:
+    with pytest.raises(ValueError):
+        validate_platform_board("espressif32", "uno")
 
 
 def test_collect_required_libraries_detects_servo() -> None:

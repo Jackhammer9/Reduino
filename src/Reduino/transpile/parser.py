@@ -1294,9 +1294,11 @@ RE_SERIAL_WRITE   = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.write\(\s*(.*?)\s*\)\s*$
 RE_SLEEP_EXPR = re.compile(r"^\s*sleep\s*\(\s*(.+?)\s*\)\s*$")
 
 # Build directive: regex for target device
-RE_TARGET_CALL = re.compile(r"""^\s*target\s*\(\s*(?:['"])?\s*([A-Za-z0-9:_\-./\\~]+)\s*(?:['"])?\s*\)\s*$""")
+RE_TARGET_CALL = re.compile(
+    r"""^\s*target\s*\(\s*(?:port\s*=\s*)?(?:['"])?\s*([A-Za-z0-9:_\-./\\~]+)\s*(?:['"])?(?:\s*,[^)]*)?\)\s*$"""
+)
 RE_TARGET_INLINE = re.compile(
-    r"""(?<!\.)\btarget\s*\(\s*(?:['"])?\s*([A-Za-z0-9:_\-./\\~]+)\s*(?:['"])?\s*\)"""
+    r"""(?<!\.)\btarget\s*\(\s*(?:port\s*=\s*)?(?:['"])?\s*([A-Za-z0-9:_\-./\\~]+)\s*(?:['"])?(?:\s*,[^)]*)?\)"""
 )
 
 # Top-level control
