@@ -25,17 +25,8 @@ jobs:
           GIST_ID: ${{ secrets.LOC_GIST_ID }}
           LOC: ${{ steps.loc.outputs.loc }}
         run: |
-          json=$(cat <<EOF
-          {
-            "schemaVersion": 1,
-            "label": "python loc",
-            "message": "${LOC}",
-            "color": "blue"
-          }
-          EOF
-          )
-
           curl -X PATCH "https://api.github.com/gists/${GIST_ID}" \
             -H "Authorization: token ${GIST_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            -d "{\"files\": {\"python-loc.json\": {\"content\": ${json@Q}}}}"
+            -d "{\"files\": {\"python-loc.json\": {\"content\": \"{\\\"schemaVersion\\\":1,\\\"label\\\":\\\"python loc\\\",\\\"message\\\":\\\"${LOC}\\\",\\\"color\\\":\\\"blue\\\"}\"}}}"
+
