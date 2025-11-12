@@ -90,10 +90,12 @@ pip install platformio  # required for automatic uploads
 
 Place `target()` **at the very top of your script**, immediately after imports. This is the entry point that tells Reduino to parse your entire file, transpile it to Arduino C++, and (optionally) upload it.
 
-| Parameter |  Type  | Default | Description                                                             |
-| --------: | :----: | :-----: | ----------------------------------------------------------------------- |
-|    `port` |  `str` |    —    | Serial port, e.g. `"COM3"` or `"/dev/ttyACM0"`.                         |
-|  `upload` | `bool` |  `True` | If `True`, compile & upload via PlatformIO. If `False`, only transpile. |
+| Parameter  |  Type  |   Default    | Description                                                                 |
+| ---------: | :----: | :----------: | --------------------------------------------------------------------------- |
+|     `port` |  `str` |      —       | Serial port, e.g. `"COM3"` or `"/dev/ttyACM0"`.                             |
+|   `upload` | `bool` |    `True`    | If `True`, compile & upload via PlatformIO. If `False`, only transpile.     |
+| `platform` |  `str` | `"atmelavr"` | PlatformIO platform ID. Reduino currently supports `atmelavr` and `atmelmegaavr`. |
+|    `board` |  `str` |   `"uno"`    | PlatformIO board ID. Must be compatible with `platform`. |
 
 **Returns:** `str` of the generated Arduino C++ source.
 
@@ -143,6 +145,31 @@ cpp = target("COM3", upload=False)
 print(cpp)
 
 # Your Reduino code below...
+```
+
+### Targeting different platforms & boards
+
+Reduino validates that the requested PlatformIO platform/board pair is supported.
+At the moment two PlatformIO platforms are available:
+
+* `atmelavr` – classic AVR-based boards (Uno, Nano, Leonardo, etc.).
+* `atmelmegaavr` – newer megaAVR devices (Nano Every, Uno WiFi Rev2, Curiosity Nano kits, ...).
+
+Every board listed in the [PlatformIO board registry for all platforms](https://docs.platformio.org/en/latest/boards/index.html) can be targeted. If you choose an unsupported board, or one that does not belong to the selected platform, `target()` raises a `ValueError` with a helpful message.
+
+```python
+from Reduino import target
+
+# Build for an Arduino Nano Every without uploading automatically.
+target(
+    "COM9",
+    upload=False,
+    platform="atmelmegaavr",
+    board="nano_every",
+)
+
+# Build for a classic Arduino Uno and upload immediately.
+target("/dev/ttyUSB0", platform="atmelavr", board="uno")
 ```
 
 > [!IMPORTANT]

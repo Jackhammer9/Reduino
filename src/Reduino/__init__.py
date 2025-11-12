@@ -10,7 +10,12 @@ import sys
 import tempfile
 from typing import List, Type
 
-from Reduino.toolchain.pio import compile_upload, ensure_pio, write_project
+from Reduino.toolchain.pio import (
+    compile_upload,
+    ensure_pio,
+    validate_platform_board,
+    write_project,
+)
 from Reduino.transpile.ast import LCDDecl, Program, ServoDecl
 from Reduino.transpile.emitter import emit
 from Reduino.transpile.parser import parse
@@ -83,7 +88,13 @@ def _collect_required_libraries(program: Program) -> List[str]:
     return requirements
 
 
-def target(port: str, *, upload: bool = True) -> None:
+def target(
+    port: str,
+    *,
+    upload: bool = True,
+    platform: str = "atmelavr",
+    board: str = "uno",
+) -> None:
     """Transpile the invoking script and prepare a PlatformIO project.
 
     Parameters
@@ -95,8 +106,20 @@ def target(port: str, *, upload: bool = True) -> None:
         after generating the temporary project directory.  Uploading is
         disabled by default so that unit tests can exercise the helper without
         requiring an Arduino board to be connected.
+    platform:
+        PlatformIO platform identifier.  Defaults to ``"atmelavr"`` for Arduino
+        AVR boards.
+    board:
+        PlatformIO board identifier.  Defaults to ``"uno"``.
+
+    Raises
+    ------
+    ValueError
+        If the requested platform or board is not supported or if the
+        combination is incompatible.
     """
 
+    validate_platform_board(platform, board)
     ensure_pio()
 
     main_file = pathlib.Path(sys.modules["__main__"].__file__)
@@ -112,7 +135,14 @@ def target(port: str, *, upload: bool = True) -> None:
     cpp = emit(program)
 
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="reduino-pio-"))
-    write_project(tmp, cpp, port=port, lib_deps=required_libs)
+    write_project(
+        tmp,
+        cpp,
+        port=port,
+        platform=platform,
+        board=board,
+        lib_deps=required_libs,
+    )
     if upload:
         compile_upload(tmp)
 
