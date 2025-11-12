@@ -37,6 +37,8 @@
   <a href="https://pypistats.org/packages/reduino">
     <img alt="PyPI downloads" src="https://img.shields.io/pypi/dm/Reduino?label=PyPI%20downloads&logo=pypi" />
   </a>
+  
+  <img alt="Python Lines Of Code" src="https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/Jackhammer9/221805154809373180108ca1d24ddccd/raw/python-loc.json" />
 </div>
 
 ---
