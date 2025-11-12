@@ -4,6 +4,9 @@
   <h1>Reduino</h1>
   <p><em>Write friendly Python. Get Arduino-ready C++. Upload Easily to MCUs.</em></p>
 
+<a href="https://www.buymeacoffee.com/Jackhammer">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="45" />
+</a> <br> <br>
   <a href="https://www.gnu.org/licenses/gpl-3.0">
     <img alt="License" src="https://img.shields.io/badge/License-GPLv3-blueviolet" />
   </a>
