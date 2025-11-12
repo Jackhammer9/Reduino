@@ -379,8 +379,7 @@ def validate_platform_board(platform: str, board: str) -> None:
     if board not in BOARD_TO_PLATFORM:
         raise ValueError(
             f"Unsupported PlatformIO board '{board}'. Supported boards for the AVR platforms "
-            "are listed at https://docs.platformio.org/en/latest/boards/atmelavr.html "
-            "and https://docs.platformio.org/en/latest/boards/atmelmegaavr.html."
+            "are listed at https://docs.platformio.org/en/latest/boards/index.html "
         )
 
     required_platform = BOARD_TO_PLATFORM[board]
