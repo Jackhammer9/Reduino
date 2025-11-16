@@ -2681,7 +2681,7 @@ def emit(ast: Program) -> str:
             )
             speed_line = f"float {speed_var} = 0.0f;"
             inverted_line = f"bool {inverted_var} = false;"
-            mode_line = f"String {mode_var} = F(\"coast\");"
+            mode_line = f"String {mode_var} = \"coast\";"
             if speed_line not in globals_:
                 globals_.append(speed_line)
             if inverted_line not in globals_:
@@ -2854,7 +2854,7 @@ def emit(ast: Program) -> str:
             )
             speed_line = f"float {state_entry['speed']} = 0.0f;"
             inverted_line = f"bool {state_entry['inverted']} = false;"
-            mode_line = f"String {state_entry['mode']} = F(\"coast\");"
+            mode_line = f"String {state_entry['mode']} = \"coast\";"
             if speed_line not in globals_:
                 globals_.append(speed_line)
             if inverted_line not in globals_:

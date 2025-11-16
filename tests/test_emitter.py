@@ -272,7 +272,7 @@ def test_emit_dc_motor_support(src, norm) -> None:
     text = norm(cpp)
     assert "float __dc_speed_motor = 0.0f;" in text
     assert "bool __dc_inverted_motor = false;" in text
-    assert 'String __dc_mode_motor = F("coast");' in text
+    assert 'String __dc_mode_motor = "coast";' in text
     assert text.count("pinMode(4, OUTPUT);") == 1
     assert "pinMode(5, OUTPUT);" in text
     assert "pinMode(6, OUTPUT);" in text
