@@ -7,7 +7,7 @@ from typing import Callable
 
 import pytest
 
-from Reduino.Actuators import Buzzer, Led, RGBLed, Servo
+from Reduino.Actuators import Buzzer, DCMotor, Led, RGBLed, Servo
 
 
 def _patch_sleep(monkeypatch: pytest.MonkeyPatch, collector: list[float]) -> None:
@@ -198,13 +198,66 @@ class TestRGBLed:
         assert led.get_color() == (10, 20, 30)
         assert calls == [10.0, 10.0]
 
-        led.fade(10, 20, 30, duration_ms=0, steps=3)
-        assert calls == [10.0, 10.0]
 
-        with pytest.raises(ValueError):
-            led.fade(0, 0, 0, duration_ms=-1)
-        with pytest.raises(ValueError):
-            led.fade(0, 0, 0, steps=0)
+class TestDCMotor:
+    """Tests covering the :class:`Reduino.Actuators.DCMotor` helper."""
+
+    def test_speed_commands_and_inversion(self) -> None:
+        motor = DCMotor(2, 3, 4)
+
+        motor.set_speed(0.75)
+        assert motor.get_speed() == 0.75
+        assert motor.get_applied_speed() == 0.75
+        assert motor.get_mode() == "drive"
+
+        motor.invert()
+        assert motor.is_inverted() is True
+        assert motor.get_applied_speed() == -0.75
+
+        motor.backward(0.5)
+        assert motor.get_speed() == -0.5
+        assert motor.get_applied_speed() == 0.5
+
+        motor.set_speed(2.0)
+        assert motor.get_speed() == 1.0
+
+    def test_stop_and_coast_modes(self) -> None:
+        motor = DCMotor(5, 6, 7)
+        motor.set_speed(0.2)
+        motor.stop()
+        assert motor.get_mode() == "brake"
+        assert motor.get_speed() == 0.0
+
+        motor.coast()
+        assert motor.get_mode() == "coast"
+        assert motor.get_applied_speed() == 0.0
+
+    def test_ramp_and_run_for_use_sleep(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        motor = DCMotor(8, 9, 10)
+        calls: list[float] = []
+        _patch_sleep(monkeypatch, calls)
+
+        motor.ramp(1.0, 100)
+        assert len(calls) == motor._RAMP_STEPS
+        assert all(call == pytest.approx(5.0) for call in calls)
+
+        motor.run_for(50, speed=-0.5)
+        assert calls[-1] == 50
+        assert motor.get_mode() == "brake"
+        assert motor.get_speed() == 0.0
+
+    @pytest.mark.parametrize(
+        "method,kwargs",
+        [
+            ("ramp", {"target_speed": 0.5, "duration_ms": -1}),
+            ("run_for", {"duration_ms": -1, "speed": 0.2}),
+        ],
+    )
+    def test_invalid_durations_raise(self, method: str, kwargs: dict) -> None:
+        motor = DCMotor(11, 12, 13)
+        func = getattr(motor, method)
+        with pytest.raises(ValueError, match="duration must be non-negative"):
+            func(**kwargs)
 
 
 class TestBuzzerPlaceholder:

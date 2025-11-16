@@ -49,6 +49,14 @@ from .ast import (
     ServoDecl,
     ServoWrite,
     ServoWriteMicroseconds,
+    DCMotorDecl,
+    DCMotorSetSpeed,
+    DCMotorBackward,
+    DCMotorStop,
+    DCMotorCoast,
+    DCMotorInvert,
+    DCMotorRamp,
+    DCMotorRunFor,
     PotentiometerDecl,
     ReturnStmt,
     SerialMonitorDecl,
@@ -790,6 +798,8 @@ def _emit_block(
     button_decls: Dict[str, ButtonDecl],
     servo_decls: Dict[str, ServoDecl],
     servo_state: Dict[str, Dict[str, str]],
+    dc_motor_pins: Dict[str, Tuple[Union[int, str], Union[int, str], Union[int, str]]],
+    dc_motor_state: Dict[str, Dict[str, str]],
     lcd_decls: Dict[str, LCDDecl],
     lcd_state: Dict[str, Dict[str, str]],
     lcd_animations: Dict[str, List[Tuple[str, str]]],
@@ -832,6 +842,97 @@ def _emit_block(
             ),
         )
         return pin_codes, color_vars, state_var
+
+    def _ensure_motor_tracking(
+        name: str,
+    ) -> Tuple[str, str, str, str, str, str]:
+        pins = dc_motor_pins.get(name)
+        if pins is None:
+            pins = (0, 0, 0)
+        in1_expr, in2_expr, enable_expr = (_emit_expr(pin) for pin in pins)
+        info = dc_motor_state.setdefault(
+            name,
+            {
+                "speed": f"__dc_speed_{name}",
+                "inverted": f"__dc_inverted_{name}",
+                "mode": f"__dc_mode_{name}",
+            },
+        )
+        return (
+            in1_expr,
+            in2_expr,
+            enable_expr,
+            info["speed"],
+            info["inverted"],
+            info["mode"],
+        )
+
+    def _emit_motor_drive_lines(
+        name: str,
+        value_expr: str,
+        indent_str: str,
+        *,
+        store_value: bool = True,
+        wrap_block: bool = True,
+    ) -> List[str]:
+        (
+            in1_expr,
+            in2_expr,
+            enable_expr,
+            speed_var,
+            inverted_var,
+            mode_var,
+        ) = _ensure_motor_tracking(name)
+        block_lines: List[str] = []
+        inner_indent = indent_str
+        if wrap_block:
+            block_lines.append(f"{indent_str}{{")
+            inner_indent = indent_str + "  "
+        block_lines.append(
+            f"{inner_indent}float __redu_speed = static_cast<float>({value_expr});"
+        )
+        block_lines.append(
+            f"{inner_indent}if (__redu_speed < -1.0f) {{ __redu_speed = -1.0f; }}"
+        )
+        block_lines.append(
+            f"{inner_indent}if (__redu_speed > 1.0f) {{ __redu_speed = 1.0f; }}"
+        )
+        if store_value:
+            block_lines.append(f"{inner_indent}{speed_var} = __redu_speed;")
+        block_lines.append(f"{inner_indent}float __redu_effective = __redu_speed;")
+        block_lines.append(
+            f"{inner_indent}if ({inverted_var}) {{ __redu_effective = -__redu_effective; }}"
+        )
+        block_lines.append(
+            f"{inner_indent}float __redu_abs = (__redu_effective >= 0.0f) ? __redu_effective : -__redu_effective;"
+        )
+        block_lines.append(
+            f"{inner_indent}if (__redu_abs > 1.0f) {{ __redu_abs = 1.0f; }}"
+        )
+        block_lines.append(
+            f"{inner_indent}int __redu_pwm = static_cast<int>((__redu_abs * 255.0f) + 0.5f);"
+        )
+        block_lines.append(f"{inner_indent}if (__redu_pwm < 0) {{ __redu_pwm = 0; }}")
+        block_lines.append(f"{inner_indent}if (__redu_pwm > 255) {{ __redu_pwm = 255; }}")
+        block_lines.append(f"{inner_indent}if (__redu_pwm == 0) {{")
+        block_lines.append(f"{inner_indent}  digitalWrite({in1_expr}, LOW);")
+        block_lines.append(f"{inner_indent}  digitalWrite({in2_expr}, LOW);")
+        block_lines.append(f"{inner_indent}}} else if (__redu_effective > 0.0f) {{")
+        block_lines.append(f"{inner_indent}  digitalWrite({in1_expr}, HIGH);")
+        block_lines.append(f"{inner_indent}  digitalWrite({in2_expr}, LOW);")
+        block_lines.append(f"{inner_indent}}} else {{")
+        block_lines.append(f"{inner_indent}  digitalWrite({in1_expr}, LOW);")
+        block_lines.append(f"{inner_indent}  digitalWrite({in2_expr}, HIGH);")
+        block_lines.append(f"{inner_indent}}}")
+        block_lines.append(f"{inner_indent}analogWrite({enable_expr}, __redu_pwm);")
+        block_lines.append(f"{inner_indent}if (__redu_pwm == 0) {{")
+        block_lines.append(f"{inner_indent}  {mode_var} = F(\"coast\");")
+        block_lines.append(f"{inner_indent}}} else {{")
+        block_lines.append(f"{inner_indent}  {mode_var} = F(\"drive\");")
+        block_lines.append(f"{inner_indent}}}")
+        if wrap_block:
+            block_lines.append(f"{indent_str}}}")
+        return block_lines
 
     def _emit_rgb_update(
         name: str, red_expr: str, green_expr: str, blue_expr: str
@@ -974,6 +1075,8 @@ def _emit_block(
                     button_decls,
                     servo_decls,
                     servo_state,
+                    dc_motor_pins,
+                    dc_motor_state,
                     lcd_decls,
                     lcd_state,
                     lcd_animations,
@@ -1043,6 +1146,8 @@ def _emit_block(
                     button_decls,
                     servo_decls,
                     servo_state,
+                    dc_motor_pins,
+                    dc_motor_state,
                     lcd_decls,
                     lcd_state,
                     lcd_animations,
@@ -1074,6 +1179,8 @@ def _emit_block(
                         button_decls,
                         servo_decls,
                         servo_state,
+                        dc_motor_pins,
+                        dc_motor_state,
                         lcd_decls,
                         lcd_state,
                         lcd_animations,
@@ -1107,6 +1214,8 @@ def _emit_block(
                     button_decls,
                     servo_decls,
                     servo_state,
+                    dc_motor_pins,
+                    dc_motor_state,
                     lcd_decls,
                     lcd_state,
                     lcd_animations,
@@ -1143,6 +1252,8 @@ def _emit_block(
                     button_decls,
                     servo_decls,
                     servo_state,
+                    dc_motor_pins,
+                    dc_motor_state,
                     lcd_decls,
                     lcd_state,
                     lcd_animations,
@@ -1176,6 +1287,8 @@ def _emit_block(
                     button_decls,
                     servo_decls,
                     servo_state,
+                    dc_motor_pins,
+                    dc_motor_state,
                     lcd_decls,
                     lcd_state,
                     lcd_animations,
@@ -1216,6 +1329,8 @@ def _emit_block(
                         button_decls,
                         servo_decls,
                         servo_state,
+                        dc_motor_pins,
+                        dc_motor_state,
                         lcd_decls,
                         lcd_state,
                         lcd_animations,
@@ -1649,6 +1764,190 @@ def _emit_block(
             lines.append(
                 f"{indent}  {servo_obj}.writeMicroseconds(static_cast<int>({pulse_var} + 0.5f));"
             )
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, DCMotorDecl):
+            dc_motor_pins[node.name] = (node.in1, node.in2, node.enable)
+            dc_motor_state.setdefault(
+                node.name,
+                {
+                    "speed": f"__dc_speed_{node.name}",
+                    "inverted": f"__dc_inverted_{node.name}",
+                    "mode": f"__dc_mode_{node.name}",
+                },
+            )
+            if in_setup:
+                if emitted_pin_modes is None:
+                    emitted_pin_modes = set()
+                for role, pin in zip(("in1", "in2", "enable"), (node.in1, node.in2, node.enable)):
+                    pin_expr = _emit_expr(pin)
+                    key = (node.name, pin_expr, role)
+                    if key not in emitted_pin_modes:
+                        emitted_pin_modes.add(key)
+                        lines.append(f"{indent}pinMode({pin_expr}, OUTPUT);")
+                in1_expr, in2_expr, enable_expr, _, _, _ = _ensure_motor_tracking(node.name)
+                lines.append(f"{indent}digitalWrite({in1_expr}, LOW);")
+                lines.append(f"{indent}digitalWrite({in2_expr}, LOW);")
+                lines.append(f"{indent}analogWrite({enable_expr}, 0);")
+            continue
+
+        if isinstance(node, DCMotorSetSpeed):
+            lines.extend(
+                _emit_motor_drive_lines(
+                    node.name,
+                    _emit_expr(node.speed),
+                    indent,
+                )
+            )
+            continue
+
+        if isinstance(node, DCMotorBackward):
+            value_expr = _emit_expr(node.speed)
+            lines.append(f"{indent}{{")
+            lines.append(
+                f"{indent}  float __redu_backward = static_cast<float>({value_expr});"
+            )
+            lines.append(
+                f"{indent}  if (__redu_backward < 0.0f) {{ __redu_backward = -__redu_backward; }}"
+            )
+            lines.append(f"{indent}  __redu_backward = -__redu_backward;")
+            lines.extend(
+                _emit_motor_drive_lines(
+                    node.name,
+                    "__redu_backward",
+                    indent + "  ",
+                    wrap_block=False,
+                )
+            )
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, DCMotorStop):
+            (
+                in1_expr,
+                in2_expr,
+                enable_expr,
+                speed_var,
+                _,
+                mode_var,
+            ) = _ensure_motor_tracking(node.name)
+            lines.append(f"{indent}{speed_var} = 0.0f;")
+            lines.append(f"{indent}digitalWrite({in1_expr}, HIGH);")
+            lines.append(f"{indent}digitalWrite({in2_expr}, HIGH);")
+            lines.append(f"{indent}analogWrite({enable_expr}, 0);")
+            lines.append(f"{indent}{mode_var} = F(\"brake\");")
+            continue
+
+        if isinstance(node, DCMotorCoast):
+            (
+                in1_expr,
+                in2_expr,
+                enable_expr,
+                speed_var,
+                _,
+                mode_var,
+            ) = _ensure_motor_tracking(node.name)
+            lines.append(f"{indent}{speed_var} = 0.0f;")
+            lines.append(f"{indent}digitalWrite({in1_expr}, LOW);")
+            lines.append(f"{indent}digitalWrite({in2_expr}, LOW);")
+            lines.append(f"{indent}analogWrite({enable_expr}, 0);")
+            lines.append(f"{indent}{mode_var} = F(\"coast\");")
+            continue
+
+        if isinstance(node, DCMotorInvert):
+            _, _, _, speed_var, inverted_var, _ = _ensure_motor_tracking(node.name)
+            lines.append(f"{indent}{inverted_var} = !{inverted_var};")
+            lines.extend(
+                _emit_motor_drive_lines(
+                    node.name,
+                    speed_var,
+                    indent,
+                    store_value=False,
+                )
+            )
+            continue
+
+        if isinstance(node, DCMotorRamp):
+            _, _, _, speed_var, _, _ = _ensure_motor_tracking(node.name)
+            target_expr = _emit_expr(node.target_speed)
+            duration_expr = _emit_expr(node.duration_ms)
+            lines.append(f"{indent}{{")
+            lines.append(f"{indent}  float __redu_start = {speed_var};")
+            lines.append(
+                f"{indent}  float __redu_target = static_cast<float>({target_expr});"
+            )
+            lines.append(
+                f"{indent}  if (__redu_target < -1.0f) {{ __redu_target = -1.0f; }}"
+            )
+            lines.append(
+                f"{indent}  if (__redu_target > 1.0f) {{ __redu_target = 1.0f; }}"
+            )
+            lines.append(
+                f"{indent}  float __redu_duration = static_cast<float>({duration_expr});"
+            )
+            lines.append(
+                f"{indent}  if (__redu_duration < 0.0f) {{ __redu_duration = 0.0f; }}"
+            )
+            lines.append(f"{indent}  const int __redu_steps = 20;")
+            lines.append(
+                f"{indent}  float __redu_delay = (__redu_steps > 0) ? (__redu_duration / static_cast<float>(__redu_steps)) : 0.0f;"
+            )
+            lines.append(f"{indent}  for (int __redu_i = 1; __redu_i <= __redu_steps; ++__redu_i) {{")
+            lines.append(
+                f"{indent}    float __redu_fraction = static_cast<float>(__redu_i) / static_cast<float>(__redu_steps);"
+            )
+            lines.append(
+                f"{indent}    float __redu_value = __redu_start + (__redu_target - __redu_start) * __redu_fraction;"
+            )
+            lines.extend(
+                _emit_motor_drive_lines(
+                    node.name,
+                    "__redu_value",
+                    indent + "    ",
+                    wrap_block=False,
+                )
+            )
+            lines.append(f"{indent}    if (__redu_delay > 0.0f) {{")
+            lines.append(f"{indent}      delay(static_cast<unsigned long>(__redu_delay));")
+            lines.append(f"{indent}    }}")
+            lines.append(f"{indent}  }}")
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, DCMotorRunFor):
+            (
+                in1_expr,
+                in2_expr,
+                enable_expr,
+                speed_var,
+                _,
+                mode_var,
+            ) = _ensure_motor_tracking(node.name)
+            duration_expr = _emit_expr(node.duration_ms)
+            lines.append(f"{indent}{{")
+            lines.append(
+                f"{indent}  float __redu_duration = static_cast<float>({duration_expr});"
+            )
+            lines.append(
+                f"{indent}  if (__redu_duration < 0.0f) {{ __redu_duration = 0.0f; }}"
+            )
+            lines.extend(
+                _emit_motor_drive_lines(
+                    node.name,
+                    _emit_expr(node.speed),
+                    indent + "  ",
+                    wrap_block=False,
+                )
+            )
+            lines.append(
+                f"{indent}  delay(static_cast<unsigned long>(__redu_duration));"
+            )
+            lines.append(f"{indent}  {speed_var} = 0.0f;")
+            lines.append(f"{indent}  digitalWrite({in1_expr}, HIGH);")
+            lines.append(f"{indent}  digitalWrite({in2_expr}, HIGH);")
+            lines.append(f"{indent}  analogWrite({enable_expr}, 0);")
+            lines.append(f"{indent}  {mode_var} = F(\"brake\");")
             lines.append(f"{indent}}}")
             continue
 
@@ -2166,6 +2465,8 @@ def emit(ast: Program) -> str:
     servo_state: Dict[str, Dict[str, str]] = {}
     servo_attach_emitted: Set[str] = set()
     servo_used = False
+    dc_motor_pins: Dict[str, Tuple[Union[int, str], Union[int, str], Union[int, str]]] = {}
+    dc_motor_state: Dict[str, Dict[str, str]] = {}
     lcd_decls: Dict[str, LCDDecl] = {}
     lcd_state: Dict[str, Dict[str, str]] = {}
     lcd_animations: Dict[str, List[Tuple[str, str]]] = {}
@@ -2370,6 +2671,38 @@ def emit(ast: Program) -> str:
                 )
             continue
 
+        if isinstance(node, DCMotorDecl):
+            speed_var = f"__dc_speed_{node.name}"
+            inverted_var = f"__dc_inverted_{node.name}"
+            mode_var = f"__dc_mode_{node.name}"
+            dc_motor_state.setdefault(
+                node.name,
+                {"speed": speed_var, "inverted": inverted_var, "mode": mode_var},
+            )
+            speed_line = f"float {speed_var} = 0.0f;"
+            inverted_line = f"bool {inverted_var} = false;"
+            mode_line = f"String {mode_var} = \"coast\";"
+            if speed_line not in globals_:
+                globals_.append(speed_line)
+            if inverted_line not in globals_:
+                globals_.append(inverted_line)
+            if mode_line not in globals_:
+                globals_.append(mode_line)
+            dc_motor_pins[node.name] = (node.in1, node.in2, node.enable)
+            for role, pin in zip(("in1", "in2", "enable"), (node.in1, node.in2, node.enable)):
+                pin_expr = _emit_expr(pin)
+                key = (node.name, pin_expr, role)
+                if key not in pin_mode_emitted:
+                    pin_mode_emitted.add(key)
+                    setup_lines.append(f"  pinMode({pin_expr}, OUTPUT);")
+            in1_expr = _emit_expr(node.in1)
+            in2_expr = _emit_expr(node.in2)
+            enable_expr = _emit_expr(node.enable)
+            setup_lines.append(f"  digitalWrite({in1_expr}, LOW);")
+            setup_lines.append(f"  digitalWrite({in2_expr}, LOW);")
+            setup_lines.append(f"  analogWrite({enable_expr}, 0);")
+            continue
+
         if isinstance(node, LCDDecl):
             info = _ensure_lcd_globals(node)
             if node.name not in lcd_init_emitted:
@@ -2511,6 +2844,38 @@ def emit(ast: Program) -> str:
                 )
             continue
 
+        if isinstance(node, DCMotorDecl):
+            speed_var = f"__dc_speed_{node.name}"
+            inverted_var = f"__dc_inverted_{node.name}"
+            mode_var = f"__dc_mode_{node.name}"
+            state_entry = dc_motor_state.setdefault(
+                node.name,
+                {"speed": speed_var, "inverted": inverted_var, "mode": mode_var},
+            )
+            speed_line = f"float {state_entry['speed']} = 0.0f;"
+            inverted_line = f"bool {state_entry['inverted']} = false;"
+            mode_line = f"String {state_entry['mode']} = \"coast\";"
+            if speed_line not in globals_:
+                globals_.append(speed_line)
+            if inverted_line not in globals_:
+                globals_.append(inverted_line)
+            if mode_line not in globals_:
+                globals_.append(mode_line)
+            dc_motor_pins.setdefault(node.name, (node.in1, node.in2, node.enable))
+            for role, pin in zip(("in1", "in2", "enable"), (node.in1, node.in2, node.enable)):
+                pin_expr = _emit_expr(pin)
+                key = (node.name, pin_expr, role)
+                if key not in pin_mode_emitted:
+                    pin_mode_emitted.add(key)
+                    setup_lines.append(f"  pinMode({pin_expr}, OUTPUT);")
+            in1_expr = _emit_expr(node.in1)
+            in2_expr = _emit_expr(node.in2)
+            enable_expr = _emit_expr(node.enable)
+            setup_lines.append(f"  digitalWrite({in1_expr}, LOW);")
+            setup_lines.append(f"  digitalWrite({in2_expr}, LOW);")
+            setup_lines.append(f"  analogWrite({enable_expr}, 0);")
+            continue
+
         if isinstance(node, LedDecl):
             state_var = f"__state_{node.name}"
             bright_var = f"__brightness_{node.name}"
@@ -2601,6 +2966,8 @@ def emit(ast: Program) -> str:
             button_decls,
             servo_decls,
             servo_state,
+            dc_motor_pins,
+            dc_motor_state,
             lcd_decls,
             lcd_state,
             lcd_animations,
@@ -2633,6 +3000,8 @@ def emit(ast: Program) -> str:
                     button_decls,
                     servo_decls,
                     servo_state,
+                    dc_motor_pins,
+                    dc_motor_state,
                     lcd_decls,
                     lcd_state,
                     lcd_animations,
@@ -2662,6 +3031,8 @@ def emit(ast: Program) -> str:
             button_decls,
             servo_decls,
             servo_state,
+            dc_motor_pins,
+            dc_motor_state,
             lcd_decls,
             lcd_state,
             lcd_animations,
@@ -2700,6 +3071,8 @@ def emit(ast: Program) -> str:
             button_decls,
             servo_decls,
             servo_state,
+            dict(dc_motor_pins),
+            {name: dict(info) for name, info in dc_motor_state.items()},
             dict(lcd_decls),
             {name: dict(info) for name, info in lcd_state.items()},
             {name: [(var, kind) for var, kind in values] for name, values in lcd_animations.items()},

@@ -42,6 +42,14 @@ from Reduino.transpile.ast import (
     ServoDecl,
     ServoWrite,
     ServoWriteMicroseconds,
+    DCMotorDecl,
+    DCMotorSetSpeed,
+    DCMotorBackward,
+    DCMotorStop,
+    DCMotorCoast,
+    DCMotorInvert,
+    DCMotorRamp,
+    DCMotorRunFor,
     ReturnStmt,
     SerialMonitorDecl,
     SerialWrite,
@@ -500,6 +508,67 @@ def test_parser_servo_nodes(src) -> None:
     ]
     assert "__servo_angle_servo" in angle_exprs
     assert "__servo_pulse_servo" in pulse_exprs
+
+
+def test_parser_dc_motor_nodes(src) -> None:
+    code = src(
+        """
+        from Reduino.Actuators import DCMotor
+
+        motor = DCMotor(2, 3, 9)
+        motor.set_speed(0.5)
+        motor.backward(0.25)
+        motor.stop()
+        motor.coast()
+        motor.invert()
+        motor.ramp(1.0, duration=250)
+        motor.run_for(1000, speed=-0.5)
+        current = motor.get_speed()
+        inverted = motor.is_inverted()
+        applied = motor.get_applied_speed()
+        mode = motor.get_mode()
+        """
+    )
+
+    program = _parse(code)
+    motor_nodes = [
+        node for node in program.setup_body if node.__class__.__name__.startswith("DCMotor")
+    ]
+    assert any(isinstance(node, DCMotorDecl) for node in motor_nodes)
+    assert any(isinstance(node, DCMotorSetSpeed) for node in motor_nodes)
+    assert any(isinstance(node, DCMotorBackward) for node in motor_nodes)
+    assert any(isinstance(node, DCMotorStop) for node in motor_nodes)
+    assert any(isinstance(node, DCMotorCoast) for node in motor_nodes)
+    assert any(isinstance(node, DCMotorInvert) for node in motor_nodes)
+    assert any(isinstance(node, DCMotorRamp) for node in motor_nodes)
+    assert any(isinstance(node, DCMotorRunFor) for node in motor_nodes)
+
+    current_assigns = [
+        node.expr
+        for node in program.setup_body
+        if isinstance(node, VarAssign) and node.name == "current"
+    ]
+    inverted_assigns = [
+        node.expr
+        for node in program.setup_body
+        if isinstance(node, VarAssign) and node.name == "inverted"
+    ]
+    applied_assigns = [
+        node.expr
+        for node in program.setup_body
+        if isinstance(node, VarAssign) and node.name == "applied"
+    ]
+    mode_assigns = [
+        node.expr
+        for node in program.setup_body
+        if isinstance(node, VarAssign) and node.name == "mode"
+    ]
+    assert "__dc_speed_motor" in current_assigns
+    assert "(__dc_inverted_motor ? 1 : 0)" in inverted_assigns
+    assert (
+        "(__dc_inverted_motor ? -__dc_speed_motor : __dc_speed_motor)" in applied_assigns
+    )
+    assert "__dc_mode_motor" in mode_assigns
 
 
 def test_parser_try_statement(src) -> None:
