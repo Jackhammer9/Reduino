@@ -40,8 +40,7 @@ pytest
 Make sure all tests pass before committing.
 
 # Repository Layout
-graphql
-Copy code
+```graphql
 src/Reduino/
 ├── Actuators/         # LED, Buzzer, Servo, etc.
 ├── Displays/          # LCD and other visual outputs
@@ -50,6 +49,8 @@ src/Reduino/
 ├── Utils/             # Timing helpers (sleep, map)
 ├── toolchain/         # PlatformIO integration
 └── transpile/         # Parser, Emitter, AST, and core transpiler
+```
+
 # Development Workflow
 Create a new branch for your feature or fix:
 
@@ -74,7 +75,7 @@ Use camelCase only in emitted Arduino C++ code.
 
 Avoid external dependencies unless absolutely required.
 
-Keep code minimal and deterministic — the transpiler must never execute user logic on the host.
+Keep code minimal and deterministic  the transpiler must never execute user logic on the host.
 
 Naming
 Follow the existing naming convention:
@@ -162,7 +163,7 @@ class Motor:
         self.pin1 = pin1
         self.pin2 = pin2
 ```
-Host-side methods don’t perform real actions — they only exist for syntax and transpilation.
+Host-side methods don’t perform real actions they only exist for syntax and transpilation.
 
 6. Register the Device
 
