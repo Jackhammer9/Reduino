@@ -53,6 +53,14 @@ from .ast import (
     ServoDecl,
     ServoWrite,
     ServoWriteMicroseconds,
+    DCMotorDecl,
+    DCMotorSetSpeed,
+    DCMotorBackward,
+    DCMotorStop,
+    DCMotorCoast,
+    DCMotorInvert,
+    DCMotorRamp,
+    DCMotorRunFor,
     Program,
     ReturnStmt,
     SerialMonitorDecl,
@@ -641,6 +649,44 @@ def _to_c_expr(
                     buzzer_names = ctx.get("buzzer_names", set())
                     if owner_node.id in buzzer_names:
                         return f"__buzzer_last_{owner_node.id}"
+                raise ValueError("unsupported attribute call")
+
+            if attr == "get_speed":
+                if n.args or n.keywords:
+                    raise ValueError("unsupported attribute call")
+                if isinstance(owner_node, ast.Name) and ctx is not None:
+                    motors = ctx.get("dc_motor_names", set())
+                    if owner_node.id in motors:
+                        return f"__dc_speed_{owner_node.id}"
+                raise ValueError("unsupported attribute call")
+
+            if attr == "get_applied_speed":
+                if n.args or n.keywords:
+                    raise ValueError("unsupported attribute call")
+                if isinstance(owner_node, ast.Name) and ctx is not None:
+                    motors = ctx.get("dc_motor_names", set())
+                    if owner_node.id in motors:
+                        return (
+                            f"(__dc_inverted_{owner_node.id} ? -__dc_speed_{owner_node.id} : __dc_speed_{owner_node.id})"
+                        )
+                raise ValueError("unsupported attribute call")
+
+            if attr == "is_inverted":
+                if n.args or n.keywords:
+                    raise ValueError("unsupported attribute call")
+                if isinstance(owner_node, ast.Name) and ctx is not None:
+                    motors = ctx.get("dc_motor_names", set())
+                    if owner_node.id in motors:
+                        return f"(__dc_inverted_{owner_node.id} ? 1 : 0)"
+                raise ValueError("unsupported attribute call")
+
+            if attr == "get_mode":
+                if n.args or n.keywords:
+                    raise ValueError("unsupported attribute call")
+                if isinstance(owner_node, ast.Name) and ctx is not None:
+                    motors = ctx.get("dc_motor_names", set())
+                    if owner_node.id in motors:
+                        return f"__dc_mode_{owner_node.id}"
                 raise ValueError("unsupported attribute call")
 
             if attr == "measure_distance":
@@ -1312,6 +1358,7 @@ def _merge_return_types(types: List[str], has_void: bool) -> str:
 RE_IMPORT_LED     = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+Led\s*$")
 RE_IMPORT_RGB_LED = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+RGBLed\s*$")
 RE_IMPORT_SERVO   = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+Servo\s*$")
+RE_IMPORT_DC_MOTOR = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+DCMotor\s*$")
 RE_IMPORT_BUZZER  = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+Buzzer\s*$")
 RE_IMPORT_SLEEP   = re.compile(r"^\s*from\s+Reduino\.Utils\s+import\s+sleep\s*$")
 RE_IMPORT_SERIAL  = re.compile(r"^\s*from\s+Reduino\.Communication\s+import\s+SerialMonitor\s*$")
@@ -1330,6 +1377,7 @@ RE_LED_DECL   = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Led\s*\(\s*(.*?)\s*\)\s*$"
 RE_BUZZER_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Buzzer\s*\(\s*(.*?)\s*\)\s*$")
 RE_RGB_LED_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*RGBLed\s*\(\s*(.*?)\s*\)\s*$")
 RE_SERVO_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Servo\s*\(\s*(.*?)\s*\)\s*$")
+RE_DC_MOTOR_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*DCMotor\s*\(\s*(.*?)\s*\)\s*$")
 RE_ULTRASONIC_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Ultrasonic\s*\(\s*(.*?)\s*\)\s*$")
 RE_BUTTON_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Button\s*\(\s*(.*?)\s*\)\s*$")
 RE_POTENTIOMETER_DECL = re.compile(
@@ -1355,6 +1403,13 @@ RE_RGB_LED_FADE      = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.fade\(\s*(.*)\s*\)\s*
 RE_RGB_LED_BLINK     = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.blink\(\s*(.*)\s*\)\s*$")
 RE_SERVO_WRITE       = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.write\(\s*(.*)\s*\)\s*$")
 RE_SERVO_WRITE_US    = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.write_us\(\s*(.*)\s*\)\s*$")
+RE_DC_MOTOR_SET_SPEED = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.set_speed\(\s*(.*)\s*\)\s*$")
+RE_DC_MOTOR_BACKWARD  = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.backward\(\s*(.*)\s*\)\s*$")
+RE_DC_MOTOR_STOP      = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.stop\(\s*\)\s*$")
+RE_DC_MOTOR_COAST     = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.coast\(\s*\)\s*$")
+RE_DC_MOTOR_INVERT    = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.invert\(\s*\)\s*$")
+RE_DC_MOTOR_RAMP      = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.ramp\(\s*(.*)\s*\)\s*$")
+RE_DC_MOTOR_RUN_FOR   = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.run_for\(\s*(.*)\s*\)\s*$")
 
 _BUZZER_MELODIES = {
     "success",
@@ -1677,6 +1732,9 @@ def _handle_assignment_ast(
     def is_buzzer_call(n: ast.AST) -> bool:
         return isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "Buzzer"
 
+    def is_dc_motor_call(n: ast.AST) -> bool:
+        return isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "DCMotor"
+
     def is_serial_monitor_call(n: ast.AST) -> bool:
         return (
             isinstance(n, ast.Call)
@@ -1695,6 +1753,7 @@ def _handle_assignment_ast(
         or is_rgb_led_call(value)
         or is_servo_call(value)
         or is_buzzer_call(value)
+        or is_dc_motor_call(value)
         or is_serial_monitor_call(value)
         or is_ultrasonic_call(value)
         or is_lcd_call(value)
@@ -1706,6 +1765,7 @@ def _handle_assignment_ast(
             or is_rgb_led_call(elt)
             or is_servo_call(elt)
             or is_buzzer_call(elt)
+            or is_dc_motor_call(elt)
             or is_serial_monitor_call(elt)
             or is_ultrasonic_call(elt)
             or is_lcd_call(elt)
@@ -2132,6 +2192,7 @@ def _parse_simple_lines(
     lcd_names = ctx.setdefault("lcd_names", set())
     lcd_tick_names = ctx.setdefault("lcd_tick_names", set())
     servo_names = ctx.setdefault("servo_names", set())
+    dc_motor_names = ctx.setdefault("dc_motor_names", set())
     buzzer_names = ctx.setdefault("buzzer_names", set())
     button_names = ctx.setdefault("button_names", set())
     button_pins = ctx.setdefault("button_pins", {})
@@ -2279,6 +2340,7 @@ def _parse_simple_lines(
             RE_IMPORT_LED.match(line)
             or RE_IMPORT_RGB_LED.match(line)
             or RE_IMPORT_SERVO.match(line)
+            or RE_IMPORT_DC_MOTOR.match(line)
             or RE_IMPORT_BUZZER.match(line)
             or RE_IMPORT_SLEEP.match(line)
             or RE_IMPORT_SERIAL.match(line)
@@ -3062,6 +3124,52 @@ def _parse_simple_lines(
             i += 1
             continue
 
+        m = RE_DC_MOTOR_DECL.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            in1_arg = _extract_call_argument(args_src, keyword="in1")
+            if in1_arg is None:
+                in1_arg = _extract_call_argument(args_src)
+            in2_arg = _extract_call_argument(args_src, keyword="in2")
+            if in2_arg is None:
+                in2_arg = _extract_call_argument(args_src, position=1)
+            enable_arg = _extract_call_argument(args_src, keyword="enable")
+            if enable_arg is None:
+                enable_arg = _extract_call_argument(args_src, position=2)
+            if not in1_arg or not in2_arg or not enable_arg:
+                raise ValueError("DCMotor requires in1, in2, and enable pins")
+
+            def _resolve_motor_pin(src_text: str) -> Union[int, str]:
+                text = src_text.strip()
+                try:
+                    expr_ast = ast.parse(text, mode="eval").body
+                except Exception:
+                    expr_ast = None
+                if expr_ast is not None and not _expr_has_name(expr_ast):
+                    try:
+                        value = _eval_const(text, vars)
+                    except Exception:
+                        pass
+                    else:
+                        if isinstance(value, bool):
+                            return 1 if value else 0
+                        if isinstance(value, (int, float)):
+                            return int(value)
+                return _to_c_expr(text, vars, ctx)
+
+            body.append(
+                DCMotorDecl(
+                    name=name,
+                    in1=_resolve_motor_pin(in1_arg),
+                    in2=_resolve_motor_pin(in2_arg),
+                    enable=_resolve_motor_pin(enable_arg),
+                )
+            )
+            dc_motor_names.add(name)
+            vars[name] = _ExprStr(name)
+            i += 1
+            continue
+
         m = RE_RGB_LED_DECL.match(line)
         if m:
             name, args_src = m.group(1), m.group(2)
@@ -3478,9 +3586,11 @@ def _parse_simple_lines(
 
         m = RE_BUZZER_STOP.match(line)
         if m:
-            body.append(BuzzerStop(name=m.group(1)))
-            i += 1
-            continue
+            name = m.group(1)
+            if name in buzzer_names:
+                body.append(BuzzerStop(name=name))
+                i += 1
+                continue
 
         m = RE_BUZZER_BEEP.match(line)
         if m:
@@ -3617,6 +3727,115 @@ def _parse_simple_lines(
                     raise ValueError("Servo.write_us requires a pulse argument")
                 pulse_expr = _to_c_expr(pulse_arg, vars, ctx)
                 body.append(ServoWriteMicroseconds(name=name, pulse_us=pulse_expr))
+                i += 1
+                continue
+
+        m = RE_DC_MOTOR_SET_SPEED.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in dc_motor_names:
+                speed_arg = _extract_call_argument(args_src, keyword="value")
+                if speed_arg is None:
+                    speed_arg = _extract_call_argument(args_src, keyword="speed")
+                if speed_arg is None:
+                    speed_arg = _extract_call_argument(args_src)
+                if speed_arg is None or not speed_arg.strip():
+                    raise ValueError("set_speed requires a speed argument")
+                body.append(
+                    DCMotorSetSpeed(name=name, speed=_resolve_float_arg(speed_arg, 0.0))
+                )
+                i += 1
+                continue
+
+        m = RE_DC_MOTOR_BACKWARD.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in dc_motor_names:
+                speed_arg = _extract_call_argument(args_src, keyword="speed")
+                if speed_arg is None:
+                    speed_arg = _extract_call_argument(args_src)
+                body.append(
+                    DCMotorBackward(
+                        name=name,
+                        speed=_resolve_float_arg(speed_arg, 1.0),
+                    )
+                )
+                i += 1
+                continue
+
+        m = RE_DC_MOTOR_STOP.match(line)
+        if m:
+            name = m.group(1)
+            if name in dc_motor_names:
+                body.append(DCMotorStop(name=name))
+                i += 1
+                continue
+
+        m = RE_DC_MOTOR_COAST.match(line)
+        if m:
+            name = m.group(1)
+            if name in dc_motor_names:
+                body.append(DCMotorCoast(name=name))
+                i += 1
+                continue
+
+        m = RE_DC_MOTOR_INVERT.match(line)
+        if m:
+            name = m.group(1)
+            if name in dc_motor_names:
+                body.append(DCMotorInvert(name=name))
+                i += 1
+                continue
+
+        m = RE_DC_MOTOR_RAMP.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in dc_motor_names:
+                target_arg = _extract_call_argument(args_src, keyword="target_speed")
+                if target_arg is None:
+                    target_arg = _extract_call_argument(args_src)
+                duration_arg = _extract_call_argument(args_src, keyword="duration")
+                if duration_arg is None:
+                    duration_arg = _extract_call_argument(args_src, keyword="duration_ms")
+                if duration_arg is None:
+                    duration_arg = _extract_call_argument(args_src, position=1)
+                if target_arg is None or not target_arg.strip():
+                    raise ValueError("ramp requires a target speed")
+                if duration_arg is None or not duration_arg.strip():
+                    raise ValueError("ramp requires a duration")
+                body.append(
+                    DCMotorRamp(
+                        name=name,
+                        target_speed=_resolve_float_arg(target_arg, 0.0),
+                        duration_ms=_resolve_float_arg(duration_arg, 0.0),
+                    )
+                )
+                i += 1
+                continue
+
+        m = RE_DC_MOTOR_RUN_FOR.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in dc_motor_names:
+                duration_arg = _extract_call_argument(args_src, keyword="duration")
+                if duration_arg is None:
+                    duration_arg = _extract_call_argument(args_src, keyword="duration_ms")
+                if duration_arg is None:
+                    duration_arg = _extract_call_argument(args_src)
+                speed_arg = _extract_call_argument(args_src, keyword="speed")
+                if speed_arg is None:
+                    speed_arg = _extract_call_argument(args_src, position=1)
+                if duration_arg is None or not duration_arg.strip():
+                    raise ValueError("run_for requires a duration")
+                if speed_arg is None or not speed_arg.strip():
+                    raise ValueError("run_for requires a speed")
+                body.append(
+                    DCMotorRunFor(
+                        name=name,
+                        duration_ms=_resolve_float_arg(duration_arg, 0.0),
+                        speed=_resolve_float_arg(speed_arg, 0.0),
+                    )
+                )
                 i += 1
                 continue
 

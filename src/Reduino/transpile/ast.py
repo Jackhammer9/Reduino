@@ -389,6 +389,71 @@ class ServoWriteMicroseconds:
 
 
 @dataclass
+class DCMotorDecl:
+    """Declare a dual-H-bridge driven DC motor."""
+
+    name: str
+    in1: Union[int, str]
+    in2: Union[int, str]
+    enable: Union[int, str]
+
+
+@dataclass
+class DCMotorSetSpeed:
+    """Drive the DC motor using a signed ``speed``."""
+
+    name: str
+    speed: Union[float, int, str]
+
+
+@dataclass
+class DCMotorBackward:
+    """Drive the DC motor backward with the provided magnitude."""
+
+    name: str
+    speed: Union[float, int, str]
+
+
+@dataclass
+class DCMotorStop:
+    """Actively brake the DC motor."""
+
+    name: str
+
+
+@dataclass
+class DCMotorCoast:
+    """Let the DC motor spin freely."""
+
+    name: str
+
+
+@dataclass
+class DCMotorInvert:
+    """Toggle the inversion flag for the DC motor."""
+
+    name: str
+
+
+@dataclass
+class DCMotorRamp:
+    """Gradually transition to ``target_speed`` over ``duration_ms``."""
+
+    name: str
+    target_speed: Union[float, int, str]
+    duration_ms: Union[float, int, str]
+
+
+@dataclass
+class DCMotorRunFor:
+    """Run the motor for ``duration_ms`` at ``speed`` then stop."""
+
+    name: str
+    duration_ms: Union[float, int, str]
+    speed: Union[float, int, str]
+
+
+@dataclass
 class Sleep:
     """Delay execution for ``ms`` milliseconds."""
 

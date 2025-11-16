@@ -251,6 +251,40 @@ def test_emit_servo_support(src, norm) -> None:
     assert text.count("__servo_servo.writeMicroseconds") >= 2
 
 
+def test_emit_dc_motor_support(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Actuators import DCMotor
+
+            motor = DCMotor(4, 5, 6)
+            motor.set_speed(0.5)
+            motor.backward(0.25)
+            motor.stop()
+            motor.coast()
+            motor.invert()
+            motor.ramp(1.0, 200)
+            motor.run_for(500, speed=-0.5)
+            """
+        )
+    )
+
+    text = norm(cpp)
+    assert "float __dc_speed_motor = 0.0f;" in text
+    assert "bool __dc_inverted_motor = false;" in text
+    assert 'String __dc_mode_motor = F("coast");' in text
+    assert text.count("pinMode(4, OUTPUT);") == 1
+    assert "pinMode(5, OUTPUT);" in text
+    assert "pinMode(6, OUTPUT);" in text
+    assert "digitalWrite(4, LOW);" in text
+    assert "analogWrite(6, 0);" in text
+    assert "const int __redu_steps = 20;" in text
+    assert "delay(static_cast<unsigned long>(__redu_duration));" in text
+    assert "digitalWrite(4, HIGH);" in text
+    assert '__dc_mode_motor = F("drive");' in text
+    assert '__dc_mode_motor = F("brake");' in text
+
+
 def test_emit_serial_monitor_and_variables(src, norm) -> None:
     cpp = compile_source(
         src(

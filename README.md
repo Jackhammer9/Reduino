@@ -303,6 +303,38 @@ s.write(0)
 
 ---
 
+#### DC Motor
+
+| Method                                                        | Description                                   |
+| ------------------------------------------------------------- | --------------------------------------------- |
+| `DCMotor(in1, in2, enable)`                                   | Control a motor driver with two direction pins and a PWM enable. |
+| `set_speed(value)`                                            | Drive with normalized speed ``-1.0`` (full reverse) to ``1.0`` (full forward). |
+| `backward(speed=1.0)`                                         | Convenience helper for negative speeds.       |
+| `stop()` / `coast()`                                          | Active brake the motor or let it spin freely. |
+| `invert()`                                                    | Toggle the wiring direction without rewiring. |
+| `ramp(target_speed, duration_ms)`                             | Linearly change speed over a duration.        |
+| `run_for(duration_ms, speed)`                                 | Drive at ``speed`` for ``duration_ms`` then stop. |
+| `get_speed()` / `get_applied_speed()` / `is_inverted()` / `get_mode()` | Inspect the requested speed, final direction, wiring inversion and current drive mode (`"drive"`, `"coast"`, `"brake"`). |
+
+**Example**
+
+```python
+from Reduino import target
+target("COM3")
+
+from Reduino.Actuators import DCMotor
+from Reduino.Utils import sleep
+
+motor = DCMotor(4, 5, 6)
+motor.set_speed(0.4)
+motor.run_for(1500, speed=1.0)
+motor.ramp(-1.0, duration_ms=800)
+sleep(250)
+motor.stop()
+```
+
+---
+
 ### Displays
 
 #### LCD
