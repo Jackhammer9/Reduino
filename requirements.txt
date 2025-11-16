@@ -1,3 +1,2 @@
 platformio
 pyserial
-pytest
