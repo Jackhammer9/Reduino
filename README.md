@@ -57,6 +57,7 @@
     * [RGB LED](#rgb-led)
     * [Buzzer](#buzzer)
     * [Servo](#servo)
+    * [DC Motor](#dc-motor)
   * [Displays](#displays)
     * [LCD](#lcd)
   * [Sensors](#sensors)
