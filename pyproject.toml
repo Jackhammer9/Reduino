@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "Reduino"
-version = "1.1.0"
+version = "1.2.0"
 description = "Reduino transpiles Python scripts into efficient Arduino C++ and uploads automatically. A simple, intuitive way to control sensors, LEDs, and actuators without touching C++."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,11 +23,7 @@ classifiers = [
 
 dependencies = [
   "pyserial",
-  "pytest"
 ]
-
-[project.optional-dependencies]
-dev = ["pytest", "ruff", "mypy", "build", "twine"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
