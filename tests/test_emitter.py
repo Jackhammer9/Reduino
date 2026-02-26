@@ -188,6 +188,24 @@ def test_emit_potentiometer_reads_analog_value(src, norm) -> None:
     assert "value = analogRead(A0);" in cpp
 
 
+
+
+def test_emit_infrared_digital_reads_value(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Sensors import InfraredDigital
+
+            ir = InfraredDigital(7)
+            detected = ir.read()
+            """
+        )
+    )
+
+    setup_section = cpp.split("void setup() {", 1)[1].split("void loop()", 1)[0]
+    assert "pinMode(7, INPUT);" in setup_section
+    assert "detected = digitalRead(7);" in cpp
+
 def test_emit_handles_led_and_rgb_led_actions(src, norm) -> None:
     cpp = compile_source(
         src(
