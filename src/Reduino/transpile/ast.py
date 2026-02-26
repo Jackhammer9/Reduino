@@ -45,6 +45,14 @@ class PotentiometerDecl:
 
 
 @dataclass
+class InfraredDigitalDecl:
+    """Declare a digital infrared input bound to ``pin``."""
+
+    name: str
+    pin: Union[int, str]
+
+
+@dataclass
 class LCDDecl:
     """Declare an HD44780 compatible LCD display."""
 

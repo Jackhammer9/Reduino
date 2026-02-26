@@ -33,6 +33,7 @@ from Reduino.transpile.ast import (
     LedOff,
     LedToggle,
     PotentiometerDecl,
+    InfraredDigitalDecl,
     RGBLedBlink,
     RGBLedDecl,
     RGBLedFade,
@@ -665,6 +666,37 @@ def test_parser_rejects_non_analog_pot_pin(src) -> None:
     with pytest.raises(ValueError, match="analogue pin literal"):
         _parse(code)
 
+
+
+
+def test_parser_declares_infrared_digital(src) -> None:
+    code = src(
+        """
+        from Reduino.Sensors import InfraredDigital
+
+        ir = InfraredDigital(4)
+        detected = ir.read()
+        """
+    )
+
+    program = _parse(code)
+    sensors = [node for node in program.setup_body if isinstance(node, InfraredDigitalDecl)]
+    assert len(sensors) == 1
+    assignments = [node for node in program.setup_body if isinstance(node, VarAssign)]
+    assert any(node.name == "detected" and "digitalRead(4)" in node.expr for node in assignments)
+
+
+def test_parser_infrared_digital_requires_pin(src) -> None:
+    code = src(
+        """
+        from Reduino.Sensors import InfraredDigital
+
+        ir = InfraredDigital()
+        """
+    )
+
+    with pytest.raises(ValueError, match="requires a pin argument"):
+        _parse(code)
 
 def test_parser_records_button_declaration_and_poll(src) -> None:
     code = src(

@@ -57,6 +57,7 @@ from .ast import (
     DCMotorInvert,
     DCMotorRamp,
     DCMotorRunFor,
+    InfraredDigitalDecl,
     PotentiometerDecl,
     ReturnStmt,
     SerialMonitorDecl,
@@ -795,6 +796,7 @@ def _emit_block(
     rgb_led_colors: Dict[str, Tuple[str, str, str]],
     ultrasonic_decls: Dict[str, UltrasonicDecl],
     potentiometer_decls: Dict[str, PotentiometerDecl],
+    infrared_digital_decls: Dict[str, InfraredDigitalDecl],
     button_decls: Dict[str, ButtonDecl],
     servo_decls: Dict[str, ServoDecl],
     servo_state: Dict[str, Dict[str, str]],
@@ -1072,6 +1074,7 @@ def _emit_block(
                     rgb_led_colors,
                     ultrasonic_decls,
                     potentiometer_decls,
+                    infrared_digital_decls,
                     button_decls,
                     servo_decls,
                     servo_state,
@@ -1120,6 +1123,10 @@ def _emit_block(
             potentiometer_decls[node.name] = node
             continue
 
+        if isinstance(node, InfraredDigitalDecl):
+            infrared_digital_decls[node.name] = node
+            continue
+
         if isinstance(node, LCDDecl):
             _register_lcd(node)
             continue
@@ -1143,6 +1150,7 @@ def _emit_block(
                     rgb_led_colors,
                     ultrasonic_decls,
                     potentiometer_decls,
+                    infrared_digital_decls,
                     button_decls,
                     servo_decls,
                     servo_state,
@@ -1211,6 +1219,7 @@ def _emit_block(
                     rgb_led_colors,
                     ultrasonic_decls,
                     potentiometer_decls,
+                    infrared_digital_decls,
                     button_decls,
                     servo_decls,
                     servo_state,
@@ -1249,6 +1258,7 @@ def _emit_block(
                     rgb_led_colors,
                     ultrasonic_decls,
                     potentiometer_decls,
+                    infrared_digital_decls,
                     button_decls,
                     servo_decls,
                     servo_state,
@@ -1284,6 +1294,7 @@ def _emit_block(
                     rgb_led_colors,
                     ultrasonic_decls,
                     potentiometer_decls,
+                    infrared_digital_decls,
                     button_decls,
                     servo_decls,
                     servo_state,
@@ -2461,6 +2472,7 @@ def emit(ast: Program) -> str:
     rgb_led_state: Dict[str, str] = {}
     rgb_led_colors: Dict[str, Tuple[str, str, str]] = {}
     potentiometer_decls: Dict[str, PotentiometerDecl] = {}
+    infrared_digital_decls: Dict[str, InfraredDigitalDecl] = {}
     servo_decls: Dict[str, ServoDecl] = {}
     servo_state: Dict[str, Dict[str, str]] = {}
     servo_attach_emitted: Set[str] = set()
@@ -2810,6 +2822,13 @@ def emit(ast: Program) -> str:
             if key not in pin_mode_emitted:
                 pin_mode_emitted.add(key)
                 setup_lines.append(f"  pinMode({pin_expr}, INPUT);")
+        if isinstance(node, InfraredDigitalDecl):
+            infrared_digital_decls[node.name] = node
+            pin_expr = _emit_expr(node.pin)
+            key = (node.name, pin_expr, "INPUT")
+            if key not in pin_mode_emitted:
+                pin_mode_emitted.add(key)
+                setup_lines.append(f"  pinMode({pin_expr}, INPUT);")
 
     for node in (loop_body or []):
         if isinstance(node, ButtonDecl):
@@ -2946,6 +2965,13 @@ def emit(ast: Program) -> str:
             if key not in pin_mode_emitted:
                 pin_mode_emitted.add(key)
                 setup_lines.append(f"  pinMode({pin_expr}, INPUT);")
+        if isinstance(node, InfraredDigitalDecl):
+            infrared_digital_decls.setdefault(node.name, node)
+            pin_expr = _emit_expr(node.pin)
+            key = (node.name, pin_expr, "INPUT")
+            if key not in pin_mode_emitted:
+                pin_mode_emitted.add(key)
+                setup_lines.append(f"  pinMode({pin_expr}, INPUT);")
 
     # Pass 2: emit statements
     setup_lines.extend(
@@ -2963,6 +2989,7 @@ def emit(ast: Program) -> str:
             rgb_led_colors,
             ultrasonic_decls,
             potentiometer_decls,
+            infrared_digital_decls,
             button_decls,
             servo_decls,
             servo_state,
@@ -2997,6 +3024,7 @@ def emit(ast: Program) -> str:
                     rgb_led_colors,
                     ultrasonic_decls,
                     potentiometer_decls,
+                    infrared_digital_decls,
                     button_decls,
                     servo_decls,
                     servo_state,
@@ -3028,6 +3056,7 @@ def emit(ast: Program) -> str:
             rgb_led_colors,
             ultrasonic_decls,
             potentiometer_decls,
+            infrared_digital_decls,
             button_decls,
             servo_decls,
             servo_state,
@@ -3068,6 +3097,7 @@ def emit(ast: Program) -> str:
             dict(rgb_led_colors),
             ultrasonic_decls,
             potentiometer_decls,
+            infrared_digital_decls,
             button_decls,
             servo_decls,
             servo_state,

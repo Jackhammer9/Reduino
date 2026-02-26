@@ -34,6 +34,7 @@ from .ast import (
     LCDProgress,
     LCDTick,
     LCDWrite,
+    InfraredDigitalDecl,
     IfStatement,
     LedBlink,
     LedDecl,
@@ -733,6 +734,16 @@ def _to_c_expr(
                         if pin_value is None:
                             raise ValueError("unsupported attribute call")
                         return f"analogRead({pin_value})"
+                if isinstance(owner_node, ast.Name) and ctx is not None:
+                    infrared_sensors = ctx.get("infrared_digital_names", set())
+                    if owner_node.id in infrared_sensors:
+                        if n.args or n.keywords:
+                            raise ValueError("unsupported attribute call")
+                        pins = ctx.get("infrared_digital_pins", {})
+                        pin_value = pins.get(owner_node.id)
+                        if pin_value is None:
+                            raise ValueError("unsupported attribute call")
+                        return f"digitalRead({pin_value})"
 
                 emit_mode = "both"
 
@@ -1069,6 +1080,9 @@ def _infer_expr_type(
             servo_names = ctx.get("servo_names", set())
             if owner.id in servo_names:
                 return "float"
+            infrared_sensors = ctx.get("infrared_digital_names", set())
+            if owner.id in infrared_sensors:
+                return "int"
             if ctx is None:
                 return "String"
             serials = ctx.get("serial_monitors", set())
@@ -1370,6 +1384,9 @@ RE_IMPORT_LCD     = re.compile(r"^\s*from\s+Reduino\.Displays\s+import\s+LCD\s*$
 RE_IMPORT_POTENTIOMETER = re.compile(
     r"^\s*from\s+Reduino\.Sensors\s+import\s+Potentiometer\s*$"
 )
+RE_IMPORT_INFRARED_DIGITAL = re.compile(
+    r"^\s*from\s+Reduino\.Sensors\s+import\s+InfraredDigital\s*$"
+)
 
 # Led Primitives
 RE_ASSIGN     = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*(.+)$")
@@ -1382,6 +1399,9 @@ RE_ULTRASONIC_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Ultrasonic\s*\(\s*(.*
 RE_BUTTON_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Button\s*\(\s*(.*?)\s*\)\s*$")
 RE_POTENTIOMETER_DECL = re.compile(
     r"^\s*([A-Za-z_]\w*)\s*=\s*Potentiometer\s*\(\s*(.*?)\s*\)\s*$"
+)
+RE_INFRARED_DIGITAL_DECL = re.compile(
+    r"^\s*([A-Za-z_]\w*)\s*=\s*InfraredDigital\s*\(\s*(.*?)\s*\)\s*$"
 )
 RE_LED_ON         = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.on\(\s*\)\s*$")
 RE_LED_OFF        = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.off\(\s*\)\s*$")
@@ -2347,6 +2367,8 @@ def _parse_simple_lines(
             or RE_IMPORT_TARGET.match(line)
             or RE_IMPORT_ULTRASONIC.match(line)
             or RE_IMPORT_BUTTON.match(line)
+            or RE_IMPORT_POTENTIOMETER.match(line)
+            or RE_IMPORT_INFRARED_DIGITAL.match(line)
             or RE_IMPORT_LCD.match(line)
         ):
             i += 1
@@ -2446,6 +2468,42 @@ def _parse_simple_lines(
             ctx.setdefault("potentiometer_pins", {})[name] = pin_value
             vars[name] = _ExprStr(name)
             body.append(PotentiometerDecl(name=name, pin=pin_value))
+            i += 1
+            continue
+
+        m = RE_INFRARED_DIGITAL_DECL.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            pin_arg = _extract_call_argument(args_src, keyword="pin")
+            if pin_arg is None:
+                pin_arg = _extract_call_argument(args_src)
+            if pin_arg is None or not pin_arg.strip():
+                raise ValueError("InfraredDigital requires a pin argument")
+
+            def _resolve_digital_pin(src_text: str) -> Union[int, str]:
+                text = src_text.strip()
+                try:
+                    expr_ast = ast.parse(text, mode="eval").body
+                except Exception:
+                    expr_ast = None
+                if expr_ast is not None and not _expr_has_name(expr_ast):
+                    try:
+                        value = _eval_const(text, vars)
+                    except Exception:
+                        pass
+                    else:
+                        if isinstance(value, bool):
+                            return 1 if value else 0
+                        if isinstance(value, (int, float)):
+                            return int(value)
+                return _to_c_expr(text, vars, ctx)
+
+            pin_value = _resolve_digital_pin(pin_arg)
+
+            ctx.setdefault("infrared_digital_names", set()).add(name)
+            ctx.setdefault("infrared_digital_pins", {})[name] = pin_value
+            vars[name] = _ExprStr(name)
+            body.append(InfraredDigitalDecl(name=name, pin=pin_value))
             i += 1
             continue
 
@@ -4239,6 +4297,7 @@ def parse(src: str) -> Program:
             or RE_IMPORT_ULTRASONIC.match(text)
             or RE_IMPORT_BUTTON.match(text)
             or RE_IMPORT_POTENTIOMETER.match(text)
+            or RE_IMPORT_INFRARED_DIGITAL.match(text)
         ):
             i += 1; continue
 
