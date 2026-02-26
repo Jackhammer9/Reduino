@@ -7,6 +7,7 @@ import pytest
 from Reduino.Sensors import (
     Button,
     HCSR04UltrasonicSensor,
+    InfraredDigital,
     Potentiometer,
     Ultrasonic,
     UltrasonicSensor,
@@ -123,3 +124,34 @@ def test_potentiometer_validates_pin_type() -> None:
 def test_potentiometer_validates_pin_format() -> None:
     with pytest.raises(ValueError):
         Potentiometer("D3")
+
+def test_infrared_digital_defaults_to_zero() -> None:
+    sensor = InfraredDigital(4)
+    assert sensor.pin == 4
+    assert sensor.read() == 0
+
+
+def test_infrared_digital_uses_provider() -> None:
+    sensor = InfraredDigital(5, state_provider=lambda: True)
+    assert sensor.read() == 1
+
+
+def test_infrared_digital_uses_default_state() -> None:
+    sensor = InfraredDigital(6, default_state=True)
+    assert sensor.read() == 1
+
+
+def test_infrared_digital_validates_pin_type() -> None:
+    with pytest.raises(TypeError):
+        InfraredDigital("7")  # type: ignore[arg-type]
+
+
+def test_infrared_digital_validates_pin_range() -> None:
+    with pytest.raises(ValueError):
+        InfraredDigital(-1)
+
+
+def test_infrared_digital_validates_provider_type() -> None:
+    with pytest.raises(TypeError):
+        InfraredDigital(7, state_provider=True)  # type: ignore[arg-type]
+
