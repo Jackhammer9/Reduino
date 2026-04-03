@@ -1671,8 +1671,11 @@ def _parse_function(
     child_ctx: Dict[str, object] = dict(ctx)
     child_ctx["vars"] = dict(ctx.get("vars", {}))
     child_ctx["var_types"] = dict(ctx.get("var_types", {}))
-    child_ctx["var_declared"] = set(ctx.get("var_declared", set()))
-    child_ctx["_base_declared"] = set(child_ctx["var_declared"])
+    # Function-local assignments should start from a clean declaration scope.
+    # This prevents variable names declared elsewhere (global scope or other
+    # functions) from forcing local first assignments into plain reassignments.
+    child_ctx["var_declared"] = set()
+    child_ctx["_base_declared"] = set()
     child_ctx["globals"] = ctx.setdefault("globals", [])
     child_ctx["helpers"] = helpers_set
     child_ctx["vars"].setdefault("_helpers", helpers_set)

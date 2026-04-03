@@ -362,6 +362,36 @@ def test_emit_serial_monitor_and_variables(src, norm) -> None:
     assert "if ((counter > 10))" in cpp
 
 
+def test_emit_function_local_variables_are_declared_per_function(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            value = 7
+
+            def angle_to_count(angle):
+                t = (float(angle) + 90.0) / 180.0
+                if t < 0.0:
+                    t = 0.0
+                return int(t * value)
+
+            def another_scale(angle):
+                t = (float(angle) + 45.0) / 90.0
+                if t > 1.0:
+                    t = 1.0
+                return int(t * value)
+
+            out1 = angle_to_count(10)
+            out2 = another_scale(20)
+            """
+        )
+    )
+
+    text = norm(cpp)
+    assert text.count("float t =") == 2
+    assert "t = ((static_cast<float>(angle) + 90.0) / 180.0);" in text
+    assert "t = ((static_cast<float>(angle) + 45.0) / 90.0);" in text
+
+
 def test_emit_for_range_and_try_except(src, norm) -> None:
     cpp = compile_source(
         src(
