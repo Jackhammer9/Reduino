@@ -303,6 +303,39 @@ def test_emit_dc_motor_support(src, norm) -> None:
     assert '__dc_mode_motor = F("brake");' in text
 
 
+def test_emit_pwm_driver_support(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Actuators import PWMDriver
+
+            driver = PWMDriver(i2c_addr=0x40, frequency_hz=200, channels=16, resolution=4095)
+            driver.set_frequency(1000)
+            driver.set_duty(0, 2048)
+            driver.set_level(1, 0.5)
+            driver.off(1)
+            driver.all_off()
+            duty = driver.get_duty(0)
+            level = driver.get_level(0)
+            """
+        )
+    )
+
+    text = norm(cpp)
+    assert "#include <Wire.h>" in cpp
+    assert "#include <Adafruit_PWMServoDriver.h>" in cpp
+    assert "Adafruit_PWMServoDriver __redu_pwm_driver(" in text
+    assert "float __pwm_frequency_driver = static_cast<float>(200.0);" in text
+    assert "int __pwm_channels_driver = static_cast<int>(16);" in text
+    assert "int __pwm_resolution_driver = static_cast<int>(4095);" in text
+    assert "__redu_pwm_driver.begin();" in text
+    assert "__redu_pwm_driver.setPWMFreq(__pwm_frequency_driver);" in text
+    assert "__redu_pwm_driver.setPWM(__redu_channel, 0, static_cast<int>(__redu_value));" in text
+    assert "for (int __redu_channel = 0; __redu_channel < __pwm_channels_driver; ++__redu_channel)" in text
+    assert "duty = __redu_pwm_get_duty_driver(0);" in text
+    assert "level = __redu_pwm_get_level_driver(0);" in text
+
+
 def test_emit_serial_monitor_and_variables(src, norm) -> None:
     cpp = compile_source(
         src(

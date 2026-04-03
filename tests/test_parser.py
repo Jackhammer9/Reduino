@@ -51,6 +51,12 @@ from Reduino.transpile.ast import (
     DCMotorInvert,
     DCMotorRamp,
     DCMotorRunFor,
+    PWMDriverDecl,
+    PWMDriverSetFrequency,
+    PWMDriverSetDuty,
+    PWMDriverSetLevel,
+    PWMDriverOff,
+    PWMDriverAllOff,
     ReturnStmt,
     SerialMonitorDecl,
     SerialWrite,
@@ -570,6 +576,54 @@ def test_parser_dc_motor_nodes(src) -> None:
         "(__dc_inverted_motor ? -__dc_speed_motor : __dc_speed_motor)" in applied_assigns
     )
     assert "__dc_mode_motor" in mode_assigns
+
+
+def test_parser_pwm_driver_nodes(src) -> None:
+    code = src(
+        """
+        from Reduino.Actuators import PWMDriver
+
+        driver = PWMDriver(i2c_addr=0x40, frequency_hz=200, channels=16, resolution=4095)
+        driver.set_frequency(1000)
+        driver.set_duty(0, 2048)
+        driver.set_level(1, 0.5)
+        driver.off(1)
+        driver.all_off()
+        duty = driver.get_duty(0)
+        level = driver.get_level(0)
+        freq = driver.get_frequency()
+        """
+    )
+
+    program = _parse(code)
+    pwm_nodes = [
+        node for node in program.setup_body if node.__class__.__name__.startswith("PWMDriver")
+    ]
+    assert any(isinstance(node, PWMDriverDecl) for node in pwm_nodes)
+    assert any(isinstance(node, PWMDriverSetFrequency) for node in pwm_nodes)
+    assert any(isinstance(node, PWMDriverSetDuty) for node in pwm_nodes)
+    assert any(isinstance(node, PWMDriverSetLevel) for node in pwm_nodes)
+    assert any(isinstance(node, PWMDriverOff) for node in pwm_nodes)
+    assert any(isinstance(node, PWMDriverAllOff) for node in pwm_nodes)
+
+    duty_assigns = [
+        node.expr
+        for node in program.setup_body
+        if isinstance(node, VarAssign) and node.name == "duty"
+    ]
+    level_assigns = [
+        node.expr
+        for node in program.setup_body
+        if isinstance(node, VarAssign) and node.name == "level"
+    ]
+    freq_assigns = [
+        node.expr
+        for node in program.setup_body
+        if isinstance(node, VarAssign) and node.name == "freq"
+    ]
+    assert "__redu_pwm_get_duty_driver(0)" in duty_assigns
+    assert "__redu_pwm_get_level_driver(0)" in level_assigns
+    assert "__pwm_frequency_driver" in freq_assigns
 
 
 def test_parser_try_statement(src) -> None:

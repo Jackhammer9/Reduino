@@ -57,6 +57,12 @@ from .ast import (
     DCMotorInvert,
     DCMotorRamp,
     DCMotorRunFor,
+    PWMDriverDecl,
+    PWMDriverSetFrequency,
+    PWMDriverSetDuty,
+    PWMDriverSetLevel,
+    PWMDriverOff,
+    PWMDriverAllOff,
     InfraredDigitalDecl,
     PotentiometerDecl,
     ReturnStmt,
@@ -802,6 +808,7 @@ def _emit_block(
     servo_state: Dict[str, Dict[str, str]],
     dc_motor_pins: Dict[str, Tuple[Union[int, str], Union[int, str], Union[int, str]]],
     dc_motor_state: Dict[str, Dict[str, str]],
+    pwm_driver_state: Dict[str, Dict[str, str]],
     lcd_decls: Dict[str, LCDDecl],
     lcd_state: Dict[str, Dict[str, str]],
     lcd_animations: Dict[str, List[Tuple[str, str]]],
@@ -867,6 +874,20 @@ def _emit_block(
             info["speed"],
             info["inverted"],
             info["mode"],
+        )
+
+    def _ensure_pwm_tracking(name: str) -> Dict[str, str]:
+        return pwm_driver_state.setdefault(
+            name,
+            {
+                "object": f"__redu_pwm_{name}",
+                "frequency": f"__pwm_frequency_{name}",
+                "channels": f"__pwm_channels_{name}",
+                "resolution": f"__pwm_resolution_{name}",
+                "state": f"__pwm_duty_{name}",
+                "getter_duty": f"__redu_pwm_get_duty_{name}",
+                "getter_level": f"__redu_pwm_get_level_{name}",
+            },
         )
 
     def _emit_motor_drive_lines(
@@ -1080,6 +1101,7 @@ def _emit_block(
                     servo_state,
                     dc_motor_pins,
                     dc_motor_state,
+                    pwm_driver_state,
                     lcd_decls,
                     lcd_state,
                     lcd_animations,
@@ -1156,6 +1178,7 @@ def _emit_block(
                     servo_state,
                     dc_motor_pins,
                     dc_motor_state,
+                    pwm_driver_state,
                     lcd_decls,
                     lcd_state,
                     lcd_animations,
@@ -1184,11 +1207,13 @@ def _emit_block(
                         rgb_led_colors,
                         ultrasonic_decls,
                         potentiometer_decls,
+                        infrared_digital_decls,
                         button_decls,
                         servo_decls,
                         servo_state,
                         dc_motor_pins,
                         dc_motor_state,
+                        pwm_driver_state,
                         lcd_decls,
                         lcd_state,
                         lcd_animations,
@@ -1225,6 +1250,7 @@ def _emit_block(
                     servo_state,
                     dc_motor_pins,
                     dc_motor_state,
+                    pwm_driver_state,
                     lcd_decls,
                     lcd_state,
                     lcd_animations,
@@ -1264,6 +1290,7 @@ def _emit_block(
                     servo_state,
                     dc_motor_pins,
                     dc_motor_state,
+                    pwm_driver_state,
                     lcd_decls,
                     lcd_state,
                     lcd_animations,
@@ -1300,6 +1327,7 @@ def _emit_block(
                     servo_state,
                     dc_motor_pins,
                     dc_motor_state,
+                    pwm_driver_state,
                     lcd_decls,
                     lcd_state,
                     lcd_animations,
@@ -1337,11 +1365,13 @@ def _emit_block(
                         rgb_led_colors,
                         ultrasonic_decls,
                         potentiometer_decls,
+                        infrared_digital_decls,
                         button_decls,
                         servo_decls,
                         servo_state,
                         dc_motor_pins,
                         dc_motor_state,
+                        pwm_driver_state,
                         lcd_decls,
                         lcd_state,
                         lcd_animations,
@@ -1962,6 +1992,92 @@ def _emit_block(
             lines.append(f"{indent}}}")
             continue
 
+        if isinstance(node, PWMDriverSetFrequency):
+            info = _ensure_pwm_tracking(node.name)
+            lines.append(f"{indent}{{")
+            lines.append(
+                f"{indent}  float __redu_freq = static_cast<float>({_emit_expr(node.frequency_hz)});"
+            )
+            lines.append(f"{indent}  if (__redu_freq <= 0.0f) {{ __redu_freq = 1.0f; }}")
+            lines.append(f"{indent}  {info['frequency']} = __redu_freq;")
+            lines.append(f"{indent}  {info['object']}.setPWMFreq(__redu_freq);")
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, PWMDriverSetDuty):
+            info = _ensure_pwm_tracking(node.name)
+            lines.append(f"{indent}{{")
+            lines.append(
+                f"{indent}  int __redu_channel = static_cast<int>({_emit_expr(node.channel)});"
+            )
+            lines.append(
+                f"{indent}  int __redu_value = static_cast<int>({_emit_expr(node.value)});"
+            )
+            lines.append(f"{indent}  if (__redu_channel < 0) {{ __redu_channel = 0; }}")
+            lines.append(
+                f"{indent}  if (__redu_channel >= {info['channels']}) {{ __redu_channel = {info['channels']} - 1; }}"
+            )
+            lines.append(f"{indent}  if (__redu_value < 0) {{ __redu_value = 0; }}")
+            lines.append(
+                f"{indent}  if (__redu_value > {info['resolution']}) {{ __redu_value = {info['resolution']}; }}"
+            )
+            lines.append(f"{indent}  {info['state']}[__redu_channel] = __redu_value;")
+            lines.append(
+                f"{indent}  {info['object']}.setPWM(__redu_channel, 0, static_cast<int>(__redu_value));"
+            )
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, PWMDriverSetLevel):
+            info = _ensure_pwm_tracking(node.name)
+            lines.append(f"{indent}{{")
+            lines.append(
+                f"{indent}  int __redu_channel = static_cast<int>({_emit_expr(node.channel)});"
+            )
+            lines.append(
+                f"{indent}  float __redu_level = static_cast<float>({_emit_expr(node.value)});"
+            )
+            lines.append(f"{indent}  if (__redu_channel < 0) {{ __redu_channel = 0; }}")
+            lines.append(
+                f"{indent}  if (__redu_channel >= {info['channels']}) {{ __redu_channel = {info['channels']} - 1; }}"
+            )
+            lines.append(f"{indent}  if (__redu_level < 0.0f) {{ __redu_level = 0.0f; }}")
+            lines.append(f"{indent}  if (__redu_level > 1.0f) {{ __redu_level = 1.0f; }}")
+            lines.append(
+                f"{indent}  int __redu_value = static_cast<int>((__redu_level * static_cast<float>({info['resolution']})) + 0.5f);"
+            )
+            lines.append(f"{indent}  {info['state']}[__redu_channel] = __redu_value;")
+            lines.append(
+                f"{indent}  {info['object']}.setPWM(__redu_channel, 0, static_cast<int>(__redu_value));"
+            )
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, PWMDriverOff):
+            info = _ensure_pwm_tracking(node.name)
+            lines.append(f"{indent}{{")
+            lines.append(
+                f"{indent}  int __redu_channel = static_cast<int>({_emit_expr(node.channel)});"
+            )
+            lines.append(f"{indent}  if (__redu_channel < 0) {{ __redu_channel = 0; }}")
+            lines.append(
+                f"{indent}  if (__redu_channel >= {info['channels']}) {{ __redu_channel = {info['channels']} - 1; }}"
+            )
+            lines.append(f"{indent}  {info['state']}[__redu_channel] = 0;")
+            lines.append(f"{indent}  {info['object']}.setPWM(__redu_channel, 0, 0);")
+            lines.append(f"{indent}}}")
+            continue
+
+        if isinstance(node, PWMDriverAllOff):
+            info = _ensure_pwm_tracking(node.name)
+            lines.append(
+                f"{indent}for (int __redu_channel = 0; __redu_channel < {info['channels']}; ++__redu_channel) {{"
+            )
+            lines.append(f"{indent}  {info['state']}[__redu_channel] = 0;")
+            lines.append(f"{indent}  {info['object']}.setPWM(__redu_channel, 0, 0);")
+            lines.append(f"{indent}}}")
+            continue
+
         if isinstance(node, LedOn):
             pin_code, state_var, brightness_var = _ensure_led_tracking(node.name)
             lines.append(f"{indent}{state_var} = true;")
@@ -2479,6 +2595,8 @@ def emit(ast: Program) -> str:
     servo_used = False
     dc_motor_pins: Dict[str, Tuple[Union[int, str], Union[int, str], Union[int, str]]] = {}
     dc_motor_state: Dict[str, Dict[str, str]] = {}
+    pwm_driver_state: Dict[str, Dict[str, str]] = {}
+    pwm_driver_used = False
     lcd_decls: Dict[str, LCDDecl] = {}
     lcd_state: Dict[str, Dict[str, str]] = {}
     lcd_animations: Dict[str, List[Tuple[str, str]]] = {}
@@ -2644,6 +2762,63 @@ def emit(ast: Program) -> str:
         lcd_animations.setdefault(node.name, [])
         return info
 
+    def _ensure_pwm_globals(node: PWMDriverDecl) -> Dict[str, str]:
+        nonlocal pwm_driver_used
+        pwm_driver_used = True
+        info = pwm_driver_state.setdefault(
+            node.name,
+            {
+                "object": f"__redu_pwm_{node.name}",
+                "frequency": f"__pwm_frequency_{node.name}",
+                "channels": f"__pwm_channels_{node.name}",
+                "resolution": f"__pwm_resolution_{node.name}",
+                "state": f"__pwm_duty_{node.name}",
+                "getter_duty": f"__redu_pwm_get_duty_{node.name}",
+                "getter_level": f"__redu_pwm_get_level_{node.name}",
+            },
+        )
+        addr_expr = _emit_expr(node.i2c_addr)
+        object_line = f"Adafruit_PWMServoDriver {info['object']}({addr_expr});"
+        if object_line not in globals_:
+            globals_.append(object_line)
+
+        frequency_line = (
+            f"float {info['frequency']} = static_cast<float>({_emit_expr(node.frequency_hz)});"
+        )
+        channels_line = (
+            f"int {info['channels']} = static_cast<int>({_emit_expr(node.channels)});"
+        )
+        resolution_line = (
+            f"int {info['resolution']} = static_cast<int>({_emit_expr(node.resolution)});"
+        )
+        state_line = f"int *{info['state']} = nullptr;"
+        getter_duty_line = (
+            f"int {info['getter_duty']}(int channel) {{"
+            f" if ({info['channels']} <= 0 || {info['state']} == nullptr) return 0;"
+            " if (channel < 0) channel = 0;"
+            f" if (channel >= {info['channels']}) channel = {info['channels']} - 1;"
+            f" return {info['state']}[channel];"
+            " }"
+        )
+        getter_level_line = (
+            f"float {info['getter_level']}(int channel) {{"
+            f" if ({info['resolution']} <= 0) return 0.0f;"
+            f" return static_cast<float>({info['getter_duty']}(channel)) / static_cast<float>({info['resolution']});"
+            " }"
+        )
+
+        for line in (
+            frequency_line,
+            channels_line,
+            resolution_line,
+            state_line,
+            getter_duty_line,
+            getter_level_line,
+        ):
+            if line not in globals_:
+                globals_.append(line)
+        return info
+
     for node in (setup_body or []):
         if isinstance(node, ButtonDecl):
             button_decls[node.name] = node
@@ -2713,6 +2888,23 @@ def emit(ast: Program) -> str:
             setup_lines.append(f"  digitalWrite({in1_expr}, LOW);")
             setup_lines.append(f"  digitalWrite({in2_expr}, LOW);")
             setup_lines.append(f"  analogWrite({enable_expr}, 0);")
+            continue
+
+        if isinstance(node, PWMDriverDecl):
+            info = _ensure_pwm_globals(node)
+            setup_lines.append(f"  {info['object']}.begin();")
+            setup_lines.append(
+                f"  if ({info['frequency']} <= 0.0f) {{ {info['frequency']} = 1.0f; }}"
+            )
+            setup_lines.append(f"  {info['object']}.setPWMFreq({info['frequency']});")
+            setup_lines.append(
+                f"  if ({info['channels']} <= 0) {{ {info['channels']} = 1; }}"
+            )
+            setup_lines.append(
+                f"  if ({info['resolution']} <= 0) {{ {info['resolution']} = 1; }}"
+            )
+            setup_lines.append(f"  if ({info['state']} != nullptr) {{ delete[] {info['state']}; }}")
+            setup_lines.append(f"  {info['state']} = new int[{info['channels']}]();")
             continue
 
         if isinstance(node, LCDDecl):
@@ -2895,6 +3087,23 @@ def emit(ast: Program) -> str:
             setup_lines.append(f"  analogWrite({enable_expr}, 0);")
             continue
 
+        if isinstance(node, PWMDriverDecl):
+            info = _ensure_pwm_globals(node)
+            setup_lines.append(f"  {info['object']}.begin();")
+            setup_lines.append(
+                f"  if ({info['frequency']} <= 0.0f) {{ {info['frequency']} = 1.0f; }}"
+            )
+            setup_lines.append(f"  {info['object']}.setPWMFreq({info['frequency']});")
+            setup_lines.append(
+                f"  if ({info['channels']} <= 0) {{ {info['channels']} = 1; }}"
+            )
+            setup_lines.append(
+                f"  if ({info['resolution']} <= 0) {{ {info['resolution']} = 1; }}"
+            )
+            setup_lines.append(f"  if ({info['state']} != nullptr) {{ delete[] {info['state']}; }}")
+            setup_lines.append(f"  {info['state']} = new int[{info['channels']}]();")
+            continue
+
         if isinstance(node, LedDecl):
             state_var = f"__state_{node.name}"
             bright_var = f"__brightness_{node.name}"
@@ -2995,6 +3204,7 @@ def emit(ast: Program) -> str:
             servo_state,
             dc_motor_pins,
             dc_motor_state,
+            pwm_driver_state,
             lcd_decls,
             lcd_state,
             lcd_animations,
@@ -3030,6 +3240,7 @@ def emit(ast: Program) -> str:
                     servo_state,
                     dc_motor_pins,
                     dc_motor_state,
+                    pwm_driver_state,
                     lcd_decls,
                     lcd_state,
                     lcd_animations,
@@ -3062,6 +3273,7 @@ def emit(ast: Program) -> str:
             servo_state,
             dc_motor_pins,
             dc_motor_state,
+            pwm_driver_state,
             lcd_decls,
             lcd_state,
             lcd_animations,
@@ -3103,6 +3315,7 @@ def emit(ast: Program) -> str:
             servo_state,
             dict(dc_motor_pins),
             {name: dict(info) for name, info in dc_motor_state.items()},
+            {name: dict(info) for name, info in pwm_driver_state.items()},
             dict(lcd_decls),
             {name: dict(info) for name, info in lcd_state.items()},
             {name: [(var, kind) for var, kind in values] for name, values in lcd_animations.items()},
@@ -3167,6 +3380,8 @@ def emit(ast: Program) -> str:
     parts: List[str] = [HEADER]
     if servo_used:
         parts.append("#include <Servo.h>\n\n")
+    if pwm_driver_used:
+        parts.append("#include <Wire.h>\n#include <Adafruit_PWMServoDriver.h>\n\n")
     if lcd_parallel_used:
         parts.append("#include <LiquidCrystal.h>\n\n")
     if lcd_i2c_used:
