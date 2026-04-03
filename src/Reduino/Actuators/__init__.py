@@ -11,5 +11,6 @@ from .DCMotor import DCMotor
 from .Led import Led
 from .RGBLed import RGBLed
 from .Servo import Servo
+from .PWMDriver import PWMDriver
 
-__all__ = [*__all__, "Buzzer", "DCMotor", "Led", "RGBLed", "Servo"]
+__all__ = [*__all__, "Buzzer", "DCMotor", "Led", "RGBLed", "Servo", "PWMDriver"]

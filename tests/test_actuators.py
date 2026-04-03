@@ -7,7 +7,7 @@ from typing import Callable
 
 import pytest
 
-from Reduino.Actuators import Buzzer, DCMotor, Led, RGBLed, Servo
+from Reduino.Actuators import Buzzer, DCMotor, Led, PWMDriver, RGBLed, Servo
 
 
 def _patch_sleep(monkeypatch: pytest.MonkeyPatch, collector: list[float]) -> None:
@@ -362,3 +362,73 @@ class TestServo:
         servo = Servo()
         with pytest.raises(ValueError, match="pulse must be within the configured bounds"):
             servo.write_us(500)
+
+
+class TestPWMDriver:
+    """Tests covering the :class:`Reduino.Actuators.PWMDriver` helper."""
+
+    def test_defaults_and_frequency_controls(self) -> None:
+        driver = PWMDriver()
+
+        assert driver.i2c_addr == 0x40
+        assert driver.channels == 16
+        assert driver.resolution == 4095
+        assert driver.get_frequency() == pytest.approx(50.0)
+
+        driver.set_frequency(60)
+        assert driver.get_frequency() == pytest.approx(60.0)
+
+    @pytest.mark.parametrize("addr", [-1, 0x80])
+    def test_i2c_address_validation(self, addr: int) -> None:
+        with pytest.raises(ValueError, match="i2c_addr"):
+            PWMDriver(i2c_addr=addr)
+
+    @pytest.mark.parametrize("frequency", [0, -10])
+    def test_frequency_validation(self, frequency: float) -> None:
+        driver = PWMDriver()
+        with pytest.raises(ValueError, match="frequency_hz must be positive"):
+            driver.set_frequency(frequency)
+
+    def test_set_and_get_duty(self) -> None:
+        driver = PWMDriver()
+
+        driver.set_duty(0, 2048)
+        assert driver.get_duty(0) == 2048
+
+        driver.set_level(1, 0.5)
+        assert driver.get_duty(1) == 2048
+        assert driver.get_level(1) == pytest.approx(0.5, abs=1 / 4095)
+
+    @pytest.mark.parametrize("channel", [-1, 16])
+    def test_channel_validation(self, channel: int) -> None:
+        driver = PWMDriver()
+
+        with pytest.raises(ValueError, match="channel out of range"):
+            driver.set_duty(channel, 100)
+
+    @pytest.mark.parametrize("duty", [-1, 4096])
+    def test_duty_validation(self, duty: int) -> None:
+        driver = PWMDriver()
+
+        with pytest.raises(ValueError, match="duty value must be between"):
+            driver.set_duty(0, duty)
+
+    @pytest.mark.parametrize("level", [-0.1, 1.1])
+    def test_level_validation(self, level: float) -> None:
+        driver = PWMDriver()
+
+        with pytest.raises(ValueError, match="level must be between 0.0 and 1.0"):
+            driver.set_level(0, level)
+
+    def test_off_and_all_off_helpers(self) -> None:
+        driver = PWMDriver()
+
+        driver.set_duty(0, 1000)
+        driver.set_duty(1, 2000)
+
+        driver.off(0)
+        assert driver.get_duty(0) == 0
+        assert driver.get_duty(1) == 2000
+
+        driver.all_off()
+        assert all(driver.get_duty(ch) == 0 for ch in range(driver.channels))

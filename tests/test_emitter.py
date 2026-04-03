@@ -303,6 +303,39 @@ def test_emit_dc_motor_support(src, norm) -> None:
     assert '__dc_mode_motor = F("brake");' in text
 
 
+def test_emit_pwm_driver_support(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            from Reduino.Actuators import PWMDriver
+
+            driver = PWMDriver(i2c_addr=0x40, frequency_hz=200, channels=16, resolution=4095)
+            driver.set_frequency(1000)
+            driver.set_duty(0, 2048)
+            driver.set_level(1, 0.5)
+            driver.off(1)
+            driver.all_off()
+            duty = driver.get_duty(0)
+            level = driver.get_level(0)
+            """
+        )
+    )
+
+    text = norm(cpp)
+    assert "#include <Wire.h>" in cpp
+    assert "#include <Adafruit_PWMServoDriver.h>" in cpp
+    assert "Adafruit_PWMServoDriver __redu_pwm_driver(" in text
+    assert "float __pwm_frequency_driver = static_cast<float>(200.0);" in text
+    assert "int __pwm_channels_driver = static_cast<int>(16);" in text
+    assert "int __pwm_resolution_driver = static_cast<int>(4095);" in text
+    assert "__redu_pwm_driver.begin();" in text
+    assert "__redu_pwm_driver.setPWMFreq(__pwm_frequency_driver);" in text
+    assert "__redu_pwm_driver.setPWM(__redu_channel, 0, static_cast<int>(__redu_value));" in text
+    assert "for (int __redu_channel = 0; __redu_channel < __pwm_channels_driver; ++__redu_channel)" in text
+    assert "duty = __redu_pwm_get_duty_driver(0);" in text
+    assert "level = __redu_pwm_get_level_driver(0);" in text
+
+
 def test_emit_serial_monitor_and_variables(src, norm) -> None:
     cpp = compile_source(
         src(
@@ -327,6 +360,36 @@ def test_emit_serial_monitor_and_variables(src, norm) -> None:
     assert "int counter = 0;" in cpp
     assert "counter = (counter + 1);" in cpp
     assert "if ((counter > 10))" in cpp
+
+
+def test_emit_function_local_variables_are_declared_per_function(src, norm) -> None:
+    cpp = compile_source(
+        src(
+            """
+            value = 7
+
+            def angle_to_count(angle):
+                t = (float(angle) + 90.0) / 180.0
+                if t < 0.0:
+                    t = 0.0
+                return int(t * value)
+
+            def another_scale(angle):
+                t = (float(angle) + 45.0) / 90.0
+                if t > 1.0:
+                    t = 1.0
+                return int(t * value)
+
+            out1 = angle_to_count(10)
+            out2 = another_scale(20)
+            """
+        )
+    )
+
+    text = norm(cpp)
+    assert text.count("float t =") == 2
+    assert "t = ((static_cast<float>(angle) + 90.0) / 180.0);" in text
+    assert "t = ((static_cast<float>(angle) + 45.0) / 90.0);" in text
 
 
 def test_emit_for_range_and_try_except(src, norm) -> None:

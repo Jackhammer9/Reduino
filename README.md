@@ -58,6 +58,7 @@
     * [Buzzer](#buzzer)
     * [Servo](#servo)
     * [DC Motor](#dc-motor)
+    * [PWM Driver](#pwm-driver)
   * [Displays](#displays)
     * [LCD](#lcd)
   * [Sensors](#sensors)
@@ -334,6 +335,43 @@ motor.ramp(-1.0, duration_ms=800)
 sleep(250)
 motor.stop()
 ```
+
+---
+
+#### PWM Driver
+
+| Method | Description |
+| ------ | ----------- |
+| `PWMDriver(i2c_addr=0x40, frequency_hz=50.0, channels=16, resolution=4095)` | Create an I²C PWM expander abstraction (PCA9685-style defaults). |
+| `set_frequency(frequency_hz)` / `get_frequency()` | Set/read the shared PWM update frequency (applies to all channels). |
+| `set_duty(channel, value)` / `get_duty(channel)` | Write/read raw duty counts in the `0..resolution` range. |
+| `set_level(channel, value)` / `get_level(channel)` | Write/read normalized duty in the `0.0..1.0` range. |
+| `off(channel)` / `all_off()` | Turn a channel off, or all channels off. |
+
+**Example**
+
+```python
+from Reduino import target
+target("COM3")
+
+from Reduino.Actuators import PWMDriver
+from Reduino.Utils import sleep
+
+driver = PWMDriver()  # defaults: 0x40, 50Hz, 16 channels, 12-bit (4095)
+driver.set_frequency(60)
+driver.set_duty(0, 2048)     # ~50% raw duty
+driver.set_level(1, 0.25)    # 25% normalized duty
+
+duty = driver.get_duty(0)
+level = driver.get_level(1)
+freq = driver.get_frequency()
+
+sleep(200)
+driver.all_off()
+```
+
+> [!NOTE]
+> During transpilation, Reduino injects `Wire` and `Adafruit_PWMServoDriver` includes automatically when `PWMDriver` is used.
 
 ---
 

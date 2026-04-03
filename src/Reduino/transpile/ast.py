@@ -462,6 +462,58 @@ class DCMotorRunFor:
 
 
 @dataclass
+class PWMDriverDecl:
+    """Declare an I2C PWM driver (e.g. PCA9685)."""
+
+    name: str
+    i2c_addr: Union[int, str] = 0x40
+    frequency_hz: Union[float, int, str] = 1000.0
+    channels: Union[int, str] = 16
+    resolution: Union[int, str] = 4095
+
+
+@dataclass
+class PWMDriverSetFrequency:
+    """Set the PWM driver base frequency."""
+
+    name: str
+    frequency_hz: Union[float, int, str]
+
+
+@dataclass
+class PWMDriverSetDuty:
+    """Set a PWM channel using raw duty counts."""
+
+    name: str
+    channel: Union[int, str]
+    value: Union[int, str]
+
+
+@dataclass
+class PWMDriverSetLevel:
+    """Set a PWM channel using a normalized level in ``0..1``."""
+
+    name: str
+    channel: Union[int, str]
+    value: Union[float, int, str]
+
+
+@dataclass
+class PWMDriverOff:
+    """Turn one PWM channel off."""
+
+    name: str
+    channel: Union[int, str]
+
+
+@dataclass
+class PWMDriverAllOff:
+    """Turn all PWM channels off."""
+
+    name: str
+
+
+@dataclass
 class Sleep:
     """Delay execution for ``ms`` milliseconds."""
 

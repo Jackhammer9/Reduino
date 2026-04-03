@@ -62,6 +62,12 @@ from .ast import (
     DCMotorInvert,
     DCMotorRamp,
     DCMotorRunFor,
+    PWMDriverDecl,
+    PWMDriverSetFrequency,
+    PWMDriverSetDuty,
+    PWMDriverSetLevel,
+    PWMDriverOff,
+    PWMDriverAllOff,
     Program,
     ReturnStmt,
     SerialMonitorDecl,
@@ -641,6 +647,9 @@ def _to_c_expr(
                     buzzer_names = ctx.get("buzzer_names", set())
                     if owner_node.id in buzzer_names:
                         return f"__buzzer_current_{owner_node.id}"
+                    pwm_driver_names = ctx.get("pwm_driver_names", set())
+                    if owner_node.id in pwm_driver_names:
+                        return f"__pwm_frequency_{owner_node.id}"
                 raise ValueError("unsupported attribute call")
 
             if attr == "get_last_frequency":
@@ -688,6 +697,26 @@ def _to_c_expr(
                     motors = ctx.get("dc_motor_names", set())
                     if owner_node.id in motors:
                         return f"__dc_mode_{owner_node.id}"
+                raise ValueError("unsupported attribute call")
+
+            if attr == "get_duty":
+                if len(n.args) != 1 or n.keywords:
+                    raise ValueError("unsupported attribute call")
+                if isinstance(owner_node, ast.Name) and ctx is not None:
+                    pwm_driver_names = ctx.get("pwm_driver_names", set())
+                    if owner_node.id in pwm_driver_names:
+                        channel_expr = emit(n.args[0])
+                        return f"__redu_pwm_get_duty_{owner_node.id}({channel_expr})"
+                raise ValueError("unsupported attribute call")
+
+            if attr == "get_level":
+                if len(n.args) != 1 or n.keywords:
+                    raise ValueError("unsupported attribute call")
+                if isinstance(owner_node, ast.Name) and ctx is not None:
+                    pwm_driver_names = ctx.get("pwm_driver_names", set())
+                    if owner_node.id in pwm_driver_names:
+                        channel_expr = emit(n.args[0])
+                        return f"__redu_pwm_get_level_{owner_node.id}({channel_expr})"
                 raise ValueError("unsupported attribute call")
 
             if attr == "measure_distance":
@@ -1070,6 +1099,30 @@ def _infer_expr_type(
         if attr == "get_brightness" and isinstance(owner, ast.Name):
             if ctx is None:
                 return "int"
+
+        if attr == "get_frequency" and isinstance(owner, ast.Name):
+            if ctx is None:
+                return "float"
+            buzzer_names = ctx.get("buzzer_names", set())
+            if owner.id in buzzer_names:
+                return "float"
+            pwm_driver_names = ctx.get("pwm_driver_names", set())
+            if owner.id in pwm_driver_names:
+                return "float"
+
+        if attr == "get_duty" and isinstance(owner, ast.Name):
+            if ctx is None:
+                return "int"
+            pwm_driver_names = ctx.get("pwm_driver_names", set())
+            if owner.id in pwm_driver_names:
+                return "int"
+
+        if attr == "get_level" and isinstance(owner, ast.Name):
+            if ctx is None:
+                return "float"
+            pwm_driver_names = ctx.get("pwm_driver_names", set())
+            if owner.id in pwm_driver_names:
+                return "float"
             led_names = ctx.get("led_names", set())
             if owner.id in led_names:
                 return "int"
@@ -1374,6 +1427,7 @@ RE_IMPORT_RGB_LED = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+RGBLed
 RE_IMPORT_SERVO   = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+Servo\s*$")
 RE_IMPORT_DC_MOTOR = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+DCMotor\s*$")
 RE_IMPORT_BUZZER  = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+Buzzer\s*$")
+RE_IMPORT_PWM_DRIVER = re.compile(r"^\s*from\s+Reduino\.Actuators\s+import\s+PWMDriver\s*$")
 RE_IMPORT_SLEEP   = re.compile(r"^\s*from\s+Reduino\.Utils\s+import\s+sleep\s*$")
 RE_IMPORT_SERIAL  = re.compile(r"^\s*from\s+Reduino\.Communication\s+import\s+SerialMonitor\s*$")
 RE_IMPORT_TARGET  = re.compile(r"^\s*from\s+Reduino\s+import\s+target\s*$")
@@ -1395,6 +1449,7 @@ RE_BUZZER_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Buzzer\s*\(\s*(.*?)\s*\)\
 RE_RGB_LED_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*RGBLed\s*\(\s*(.*?)\s*\)\s*$")
 RE_SERVO_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Servo\s*\(\s*(.*?)\s*\)\s*$")
 RE_DC_MOTOR_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*DCMotor\s*\(\s*(.*?)\s*\)\s*$")
+RE_PWM_DRIVER_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*PWMDriver\s*\(\s*(.*?)\s*\)\s*$")
 RE_ULTRASONIC_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Ultrasonic\s*\(\s*(.*?)\s*\)\s*$")
 RE_BUTTON_DECL = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*Button\s*\(\s*(.*?)\s*\)\s*$")
 RE_POTENTIOMETER_DECL = re.compile(
@@ -1430,6 +1485,11 @@ RE_DC_MOTOR_COAST     = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.coast\(\s*\)\s*$")
 RE_DC_MOTOR_INVERT    = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.invert\(\s*\)\s*$")
 RE_DC_MOTOR_RAMP      = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.ramp\(\s*(.*)\s*\)\s*$")
 RE_DC_MOTOR_RUN_FOR   = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.run_for\(\s*(.*)\s*\)\s*$")
+RE_PWM_DRIVER_SET_FREQUENCY = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.set_frequency\(\s*(.*)\s*\)\s*$")
+RE_PWM_DRIVER_SET_DUTY = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.set_duty\(\s*(.*)\s*\)\s*$")
+RE_PWM_DRIVER_SET_LEVEL = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.set_level\(\s*(.*)\s*\)\s*$")
+RE_PWM_DRIVER_OFF = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.off\(\s*(.*)\s*\)\s*$")
+RE_PWM_DRIVER_ALL_OFF = re.compile(r"^\s*([A-Za-z_]\w*)\s*\.all_off\(\s*\)\s*$")
 
 _BUZZER_MELODIES = {
     "success",
@@ -1611,8 +1671,11 @@ def _parse_function(
     child_ctx: Dict[str, object] = dict(ctx)
     child_ctx["vars"] = dict(ctx.get("vars", {}))
     child_ctx["var_types"] = dict(ctx.get("var_types", {}))
-    child_ctx["var_declared"] = set(ctx.get("var_declared", set()))
-    child_ctx["_base_declared"] = set(child_ctx["var_declared"])
+    # Function-local assignments should start from a clean declaration scope.
+    # This prevents variable names declared elsewhere (global scope or other
+    # functions) from forcing local first assignments into plain reassignments.
+    child_ctx["var_declared"] = set()
+    child_ctx["_base_declared"] = set()
     child_ctx["globals"] = ctx.setdefault("globals", [])
     child_ctx["helpers"] = helpers_set
     child_ctx["vars"].setdefault("_helpers", helpers_set)
@@ -1755,6 +1818,9 @@ def _handle_assignment_ast(
     def is_dc_motor_call(n: ast.AST) -> bool:
         return isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "DCMotor"
 
+    def is_pwm_driver_call(n: ast.AST) -> bool:
+        return isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "PWMDriver"
+
     def is_serial_monitor_call(n: ast.AST) -> bool:
         return (
             isinstance(n, ast.Call)
@@ -1774,6 +1840,7 @@ def _handle_assignment_ast(
         or is_servo_call(value)
         or is_buzzer_call(value)
         or is_dc_motor_call(value)
+        or is_pwm_driver_call(value)
         or is_serial_monitor_call(value)
         or is_ultrasonic_call(value)
         or is_lcd_call(value)
@@ -1786,6 +1853,7 @@ def _handle_assignment_ast(
             or is_servo_call(elt)
             or is_buzzer_call(elt)
             or is_dc_motor_call(elt)
+            or is_pwm_driver_call(elt)
             or is_serial_monitor_call(elt)
             or is_ultrasonic_call(elt)
             or is_lcd_call(elt)
@@ -2213,6 +2281,7 @@ def _parse_simple_lines(
     lcd_tick_names = ctx.setdefault("lcd_tick_names", set())
     servo_names = ctx.setdefault("servo_names", set())
     dc_motor_names = ctx.setdefault("dc_motor_names", set())
+    pwm_driver_names = ctx.setdefault("pwm_driver_names", set())
     buzzer_names = ctx.setdefault("buzzer_names", set())
     button_names = ctx.setdefault("button_names", set())
     button_pins = ctx.setdefault("button_pins", {})
@@ -2362,6 +2431,7 @@ def _parse_simple_lines(
             or RE_IMPORT_SERVO.match(line)
             or RE_IMPORT_DC_MOTOR.match(line)
             or RE_IMPORT_BUZZER.match(line)
+            or RE_IMPORT_PWM_DRIVER.match(line)
             or RE_IMPORT_SLEEP.match(line)
             or RE_IMPORT_SERIAL.match(line)
             or RE_IMPORT_TARGET.match(line)
@@ -3228,6 +3298,29 @@ def _parse_simple_lines(
             i += 1
             continue
 
+        m = RE_PWM_DRIVER_DECL.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            i2c_addr = _resolve_numeric_arg(_extract_call_argument(args_src, keyword="i2c_addr"), 0x40)
+            frequency_hz = _resolve_float_arg(
+                _extract_call_argument(args_src, keyword="frequency_hz"), 50.0
+            )
+            channels = _resolve_numeric_arg(_extract_call_argument(args_src, keyword="channels"), 16)
+            resolution = _resolve_numeric_arg(_extract_call_argument(args_src, keyword="resolution"), 4095)
+            body.append(
+                PWMDriverDecl(
+                    name=name,
+                    i2c_addr=i2c_addr,
+                    frequency_hz=frequency_hz,
+                    channels=channels,
+                    resolution=resolution,
+                )
+            )
+            pwm_driver_names.add(name)
+            vars[name] = _ExprStr(name)
+            i += 1
+            continue
+
         m = RE_RGB_LED_DECL.match(line)
         if m:
             name, args_src = m.group(1), m.group(2)
@@ -3894,6 +3987,98 @@ def _parse_simple_lines(
                         speed=_resolve_float_arg(speed_arg, 0.0),
                     )
                 )
+                i += 1
+                continue
+
+        m = RE_PWM_DRIVER_SET_FREQUENCY.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in pwm_driver_names:
+                freq_arg = _extract_call_argument(args_src, keyword="frequency_hz")
+                if freq_arg is None:
+                    freq_arg = _extract_call_argument(args_src)
+                if freq_arg is None or not freq_arg.strip():
+                    raise ValueError("set_frequency requires a frequency_hz argument")
+                body.append(
+                    PWMDriverSetFrequency(
+                        name=name,
+                        frequency_hz=_resolve_float_arg(freq_arg, 50.0),
+                    )
+                )
+                i += 1
+                continue
+
+        m = RE_PWM_DRIVER_SET_DUTY.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in pwm_driver_names:
+                channel_arg = _extract_call_argument(args_src, keyword="channel")
+                if channel_arg is None:
+                    channel_arg = _extract_call_argument(args_src, position=0)
+                value_arg = _extract_call_argument(args_src, keyword="value")
+                if value_arg is None:
+                    value_arg = _extract_call_argument(args_src, position=1)
+                if channel_arg is None or not channel_arg.strip():
+                    raise ValueError("set_duty requires a channel argument")
+                if value_arg is None or not value_arg.strip():
+                    raise ValueError("set_duty requires a value argument")
+                body.append(
+                    PWMDriverSetDuty(
+                        name=name,
+                        channel=_resolve_numeric_arg(channel_arg, 0),
+                        value=_resolve_numeric_arg(value_arg, 0),
+                    )
+                )
+                i += 1
+                continue
+
+        m = RE_PWM_DRIVER_SET_LEVEL.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in pwm_driver_names:
+                channel_arg = _extract_call_argument(args_src, keyword="channel")
+                if channel_arg is None:
+                    channel_arg = _extract_call_argument(args_src, position=0)
+                value_arg = _extract_call_argument(args_src, keyword="value")
+                if value_arg is None:
+                    value_arg = _extract_call_argument(args_src, position=1)
+                if channel_arg is None or not channel_arg.strip():
+                    raise ValueError("set_level requires a channel argument")
+                if value_arg is None or not value_arg.strip():
+                    raise ValueError("set_level requires a value argument")
+                body.append(
+                    PWMDriverSetLevel(
+                        name=name,
+                        channel=_resolve_numeric_arg(channel_arg, 0),
+                        value=_resolve_float_arg(value_arg, 0.0),
+                    )
+                )
+                i += 1
+                continue
+
+        m = RE_PWM_DRIVER_OFF.match(line)
+        if m:
+            name, args_src = m.group(1), m.group(2)
+            if name in pwm_driver_names:
+                channel_arg = _extract_call_argument(args_src, keyword="channel")
+                if channel_arg is None:
+                    channel_arg = _extract_call_argument(args_src)
+                if channel_arg is None or not channel_arg.strip():
+                    raise ValueError("off requires a channel argument")
+                body.append(
+                    PWMDriverOff(
+                        name=name,
+                        channel=_resolve_numeric_arg(channel_arg, 0),
+                    )
+                )
+                i += 1
+                continue
+
+        m = RE_PWM_DRIVER_ALL_OFF.match(line)
+        if m:
+            name = m.group(1)
+            if name in pwm_driver_names:
+                body.append(PWMDriverAllOff(name=name))
                 i += 1
                 continue
 
