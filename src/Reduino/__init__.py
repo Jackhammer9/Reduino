@@ -16,7 +16,7 @@ from Reduino.toolchain.pio import (
     validate_platform_board,
     write_project,
 )
-from Reduino.transpile.ast import LCDDecl, Program, ServoDecl
+from Reduino.transpile.ast import LCDDecl, PWMDriverDecl, Program, ServoDecl
 from Reduino.transpile.emitter import emit
 from Reduino.transpile.parser import parse
 
@@ -60,6 +60,8 @@ def _collect_required_libraries(program: Program) -> List[str]:
     requirements: List[str] = []
     if _program_contains(program, ServoDecl):
         requirements.append("Servo")
+    if _program_contains(program, PWMDriverDecl):
+        requirements.append("adafruit/Adafruit PWM Servo Driver Library")
     lcd_interfaces: set[str] = set()
 
     def _visit(value: object) -> None:

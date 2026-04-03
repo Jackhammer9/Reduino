@@ -7,7 +7,7 @@ import pytest
 from Reduino import _collect_required_libraries
 
 from Reduino.toolchain.pio import validate_platform_board, write_project
-from Reduino.transpile.ast import LCDDecl, Program, ServoDecl
+from Reduino.transpile.ast import LCDDecl, PWMDriverDecl, Program, ServoDecl
 
 
 def _read_ini(tmp_path: pathlib.Path) -> str:
@@ -114,3 +114,10 @@ def test_collect_required_libraries_detects_i2c_lcd() -> None:
     )
 
     assert _collect_required_libraries(program) == ["LiquidCrystal_I2C"]
+
+
+def test_collect_required_libraries_detects_pwm_driver() -> None:
+    program = Program(setup_body=[PWMDriverDecl(name="pwm")])
+    assert _collect_required_libraries(program) == [
+        "adafruit/Adafruit PWM Servo Driver Library"
+    ]
