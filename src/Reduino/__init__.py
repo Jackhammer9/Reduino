@@ -3,7 +3,7 @@ from __future__ import annotations
 """User-facing helpers for the Reduino transpiler package."""
 
 __all__ = ["target"]
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 import pathlib
 import sys
