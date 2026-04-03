@@ -15,7 +15,7 @@ class PWMDriver:
         self,
         i2c_addr: int = 0x40,
         *,
-        frequency_hz: float = 1000.0,
+        frequency_hz: float = 50.0,
         channels: int = 16,
         resolution: int = 4095,
     ) -> None:

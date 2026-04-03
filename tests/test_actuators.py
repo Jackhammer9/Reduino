@@ -373,7 +373,7 @@ class TestPWMDriver:
         assert driver.i2c_addr == 0x40
         assert driver.channels == 16
         assert driver.resolution == 4095
-        assert driver.get_frequency() == pytest.approx(1000.0)
+        assert driver.get_frequency() == pytest.approx(50.0)
 
         driver.set_frequency(60)
         assert driver.get_frequency() == pytest.approx(60.0)

@@ -3300,7 +3300,7 @@ def _parse_simple_lines(
             name, args_src = m.group(1), m.group(2)
             i2c_addr = _resolve_numeric_arg(_extract_call_argument(args_src, keyword="i2c_addr"), 0x40)
             frequency_hz = _resolve_float_arg(
-                _extract_call_argument(args_src, keyword="frequency_hz"), 1000.0
+                _extract_call_argument(args_src, keyword="frequency_hz"), 50.0
             )
             channels = _resolve_numeric_arg(_extract_call_argument(args_src, keyword="channels"), 16)
             resolution = _resolve_numeric_arg(_extract_call_argument(args_src, keyword="resolution"), 4095)
@@ -3999,7 +3999,7 @@ def _parse_simple_lines(
                 body.append(
                     PWMDriverSetFrequency(
                         name=name,
-                        frequency_hz=_resolve_float_arg(freq_arg, 1000.0),
+                        frequency_hz=_resolve_float_arg(freq_arg, 50.0),
                     )
                 )
                 i += 1
